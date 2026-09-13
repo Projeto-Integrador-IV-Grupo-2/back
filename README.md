@@ -142,6 +142,41 @@ Gera um `.jar` executável com a aplicação e todas as dependências dentro.
 
 ---
 
+## Autenticação
+
+A API é *stateless*: não há sessão nem cookie. O front faz login uma vez, guarda
+o token e o envia em toda requisição no cabeçalho
+`Authorization: Bearer <token>`.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `POST /api/auth/login` | público | Recebe `{ "email", "senha" }` e devolve o token + os dados do usuário |
+| `GET /api/auth/me` | autenticado | Devolve o usuário dono do token |
+
+Todo endpoint que não esteja na lista de públicos (`/api/auth/login`,
+`/api/health`, `/actuator/health`, `/actuator/info`) exige token válido.
+
+```bash
+# 1. login
+curl -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"seu.email@nexo.com","senha":"sua-senha"}'
+
+# 2. usar o token devolvido
+curl http://localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'
+```
+
+> **Atenção:** o administrador criado pela migration `V5__seed_initial_admin.sql`
+> (`admin@nexo.com`) tem um hash BCrypt cuja senha não é conhecida — ou seja,
+> ainda **não é possível entrar com ele**. Enquanto uma migration nova não
+> corrigir esse hash, use um usuário criado com senha conhecida.
+
+Respostas de erro seguem o mesmo formato do resto da API: **401** quando falta
+token ou as credenciais não conferem, **403** para usuário inativo ou sem
+permissão.
+
+---
+
 ## O que vai em cada pasta
 
 Código em [`src/main/java/com/nexo/`](src/main/java/com/nexo/). A organização
@@ -155,11 +190,11 @@ segue o padrão MVC em camadas:
 | `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UserService.java` |
 | `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `interface UserRepository extends JpaRepository<User, UUID>` |
 | `entity` | Classes `@Entity` que representam as tabelas do banco. | `User.java` (tabela `users`) |
-| `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, futuro `JwtAuthFilter.java` |
+| `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, `JwtAuthenticationFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
 
-> As pastas `entity`, `repository` e `service` estão vazias por enquanto (só com
-> um arquivo `.gitkeep` para o Git manter a pasta). Os próximos módulos preenchem.
+> Os módulos de usuários e autenticação já preenchem `entity`, `repository`,
+> `service` e `security`.
 
 ### Como as camadas conversam
 
@@ -210,6 +245,13 @@ define-se a variável e ela prevalece.
 | `DB_USERNAME` | `nexo` | Usuário do banco |
 | `DB_PASSWORD` | `nexo` | Senha do banco |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Origens do frontend liberadas no CORS (separadas por vírgula) |
+| `JWT_SECRET` | chave de dev (só nos perfis `dev` e `test`) | Chave de assinatura do token JWT (mínimo 32 caracteres) |
+| `JWT_ISSUER` | `nexo-api` | Emissor gravado e exigido na validação do token |
+| `JWT_EXPIRATION` | `PT2H` | Validade do token no formato ISO-8601 (ex.: `PT30M`, `PT8H`) |
+
+> **`JWT_SECRET`:** em `dev` e `test` há um valor default (que não é segredo)
+> para a API subir sem configuração. Em qualquer outro ambiente a aplicação
+> **não inicia** sem essa variável definida.
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
