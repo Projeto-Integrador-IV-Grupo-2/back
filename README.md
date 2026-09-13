@@ -153,8 +153,11 @@ o token e o envia em toda requisição no cabeçalho
 | `POST /api/auth/login` | público | Recebe `{ "email", "senha" }` e devolve o token + os dados do usuário |
 | `GET /api/auth/me` | autenticado | Devolve o usuário dono do token |
 
-Todo endpoint que não esteja na lista de públicos (`/api/auth/login`,
-`/api/health`, `/actuator/health`, `/actuator/info`) exige token válido.
+Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
+`/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
+rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN` — é o
+prefixo reservado para os endpoints administrativos, e um colaborador recebe
+`403` nelas.
 
 ```bash
 # 1. login
