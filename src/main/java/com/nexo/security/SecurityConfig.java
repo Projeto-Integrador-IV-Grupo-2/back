@@ -26,7 +26,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * se identifica pelo token JWT, validado pelo {@link JwtAuthenticationFilter}
  * antes da autenticação padrão do Spring Security. Continuam públicos apenas os
  * endpoints de infraestrutura e o login; todo o restante exige token, e as rotas
- * administrativas exigem também o perfil ADMIN.</p>
+ * administrativas exigem também o perfil ADMINISTRADOR.</p>
  */
 @Configuration
 @EnableWebSecurity
@@ -44,7 +44,7 @@ public class SecurityConfig {
             "/error"
     };
 
-    /** Prefixo reservado às rotas administrativas: só o perfil ADMIN entra. */
+    /** Prefixo reservado às rotas administrativas: só o perfil ADMINISTRADOR entra. */
     private static final String ENDPOINTS_ADMINISTRATIVOS = "/api/admin/**";
 
     @Bean
@@ -60,7 +60,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, LOGIN).permitAll()
                         .requestMatchers(ENDPOINTS_PUBLICOS).permitAll()
-                        .requestMatchers(ENDPOINTS_ADMINISTRATIVOS).hasRole(Perfil.ADMIN.name())
+                        .requestMatchers(ENDPOINTS_ADMINISTRATIVOS).hasRole(Perfil.ADMINISTRADOR.name())
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(securityErrorHandler)

@@ -28,7 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Valida as regras da cadeia de segurança: rotas públicas, rotas protegidas,
- * restrição das rotas administrativas ao perfil ADMIN e CORS do frontend.
+ * restrição das rotas administrativas ao perfil ADMINISTRADOR e CORS do frontend.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -77,7 +77,7 @@ class SecurityConfigTest {
 
     @Test
     void adminNaoEhBarradoEmRotaAdministrativa() throws Exception {
-        String token = tokenDe(Perfil.ADMIN);
+        String token = tokenDe(Perfil.ADMINISTRADOR);
 
         // 404 (e não 403): a autorização passou, só não existe controller nesse caminho ainda.
         mockMvc.perform(get(ROTA_ADMINISTRATIVA).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))

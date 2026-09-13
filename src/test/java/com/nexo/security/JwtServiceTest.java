@@ -23,7 +23,7 @@ class JwtServiceTest {
 
     @Test
     void tokenGeradoCarregaDadosDoUsuarioEValida() {
-        UsuarioAutenticado usuario = usuario(Perfil.ADMIN);
+        UsuarioAutenticado usuario = usuario(Perfil.ADMINISTRADOR);
 
         JwtService.Token token = jwtService.gerar(usuario);
 
@@ -34,7 +34,7 @@ class JwtServiceTest {
         assertThat(claims.getSubject()).isEqualTo(usuario.getId().toString());
         assertThat(claims.getIssuer()).isEqualTo(EMISSOR);
         assertThat(claims.get(JwtService.CLAIM_EMAIL, String.class)).isEqualTo(usuario.getEmail());
-        assertThat(claims.get(JwtService.CLAIM_PAPEL, String.class)).isEqualTo("ADMIN");
+        assertThat(claims.get(JwtService.CLAIM_PAPEL, String.class)).isEqualTo("ADMINISTRADOR");
         assertThat(claims.get(JwtService.CLAIM_TENANT, String.class))
                 .isEqualTo(usuario.getTenantId().toString());
     }
@@ -52,7 +52,7 @@ class JwtServiceTest {
     void tokenAssinadoComOutraChaveEhRejeitado() {
         String tokenDeOutraApi = new JwtService(
                 new JwtProperties("outra-chave-de-teste-com-tamanho-suficiente", EMISSOR, Duration.ofHours(2)))
-                .gerar(usuario(Perfil.ADMIN))
+                .gerar(usuario(Perfil.ADMINISTRADOR))
                 .valor();
 
         assertThat(jwtService.validar(tokenDeOutraApi)).isEmpty();
@@ -62,7 +62,7 @@ class JwtServiceTest {
     void tokenDeOutroEmissorEhRejeitado() {
         String tokenDeOutroEmissor = new JwtService(
                 new JwtProperties(SECRET, "outra-api", Duration.ofHours(2)))
-                .gerar(usuario(Perfil.ADMIN))
+                .gerar(usuario(Perfil.ADMINISTRADOR))
                 .valor();
 
         assertThat(jwtService.validar(tokenDeOutroEmissor)).isEmpty();
@@ -73,7 +73,7 @@ class JwtServiceTest {
         // A claim "exp" tem precisão de segundos: a espera precisa ultrapassá-la.
         JwtService comValidadeDeUmSegundo = new JwtService(
                 new JwtProperties(SECRET, EMISSOR, Duration.ofSeconds(1)));
-        String token = comValidadeDeUmSegundo.gerar(usuario(Perfil.ADMIN)).valor();
+        String token = comValidadeDeUmSegundo.gerar(usuario(Perfil.ADMINISTRADOR)).valor();
 
         Thread.sleep(1200);
 

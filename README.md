@@ -155,9 +155,9 @@ o token e o envia em toda requisição no cabeçalho
 
 Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
 `/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
-rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN` — é o
-prefixo reservado para os endpoints administrativos, e um colaborador recebe
-`403` nelas.
+rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMINISTRADOR`
+(role `ROLE_ADMINISTRADOR`) — é o prefixo reservado para os endpoints
+administrativos, e um colaborador recebe `403` nelas.
 
 ```bash
 # 1. login

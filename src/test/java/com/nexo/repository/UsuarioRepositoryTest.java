@@ -60,7 +60,7 @@ class UsuarioRepositoryTest {
 
         assertThat(encontrado).isPresent();
         Usuario admin = encontrado.get();
-        assertThat(admin.getPapel()).isEqualTo(Perfil.ADMIN);
+        assertThat(admin.getPapel()).isEqualTo(Perfil.ADMINISTRADOR);
         assertThat(admin.getSituacao()).isEqualTo(SituacaoUsuario.ATIVO);
         assertThat(admin.getTenant().getSubdominio()).isEqualTo("nexo");
         assertThat(admin.getCriadoEm()).isNotNull();
@@ -113,13 +113,13 @@ class UsuarioRepositoryTest {
     @Test
     void consultaPaginadaComFiltroDePerfil() {
         Page<Usuario> pagina = usuarioRepository.findAll(
-                UsuarioSpecifications.comFiltro(new UsuarioFiltro(null, null, null, Perfil.ADMIN, null)),
+                UsuarioSpecifications.comFiltro(new UsuarioFiltro(null, null, null, Perfil.ADMINISTRADOR, null)),
                 PageRequest.of(0, 20, Sort.by("email")));
 
         assertThat(pagina.getTotalElements()).isGreaterThanOrEqualTo(1);
         assertThat(pagina.getContent()).isNotEmpty();
         assertThat(pagina.getContent())
-                .allSatisfy(u -> assertThat(u.getPapel()).isEqualTo(Perfil.ADMIN));
+                .allSatisfy(u -> assertThat(u.getPapel()).isEqualTo(Perfil.ADMINISTRADOR));
     }
 
     @Test
