@@ -25,6 +25,8 @@ spring:
 
   flyway:
     enabled: true
+    # db/seed só entra em dev e test (ver os perfis abaixo): é lá que ficam os
+    # dados de conveniência, como a senha conhecida do administrador inicial.
     locations: classpath:db/migration
     baseline-on-migrate: true
 
@@ -87,6 +89,8 @@ spring:
     password: ${DB_PASSWORD:nexo}
     hikari:
       maximum-pool-size: ${DB_POOL_MAX:10}
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
   jpa:
     show-sql: true
 
@@ -112,6 +116,8 @@ spring:
   datasource:
     url: jdbc:tc:postgresql:16:///nexo_test
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
   jpa:
     show-sql: false
 

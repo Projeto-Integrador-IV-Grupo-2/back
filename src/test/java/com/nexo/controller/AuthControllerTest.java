@@ -29,8 +29,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /**
  * Fluxo de autenticação de ponta a ponta: login, uso do token e rotas protegidas.
  *
- * <p>Cada teste cria o próprio usuário (com senha conhecida) em vez de usar o
- * administrador do seed, cujo hash não corresponde a nenhuma senha conhecida.</p>
+ * <p>Os casos gerais criam o próprio usuário, para não depender do seed; o
+ * administrador inicial tem um teste à parte, que trava a senha documentada no
+ * README.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -73,6 +74,13 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.usuario.email").value(email))
                 .andExpect(jsonPath("$.usuario.papel").value("COLABORADOR"))
                 .andExpect(jsonPath("$.usuario.tenantId").isNotEmpty());
+    }
+
+    @Test
+    void administradorInicialEntraComASenhaDocumentada() throws Exception {
+        mockMvc.perform(login("admin@nexo.com", "admin123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.usuario.papel").value("ADMINISTRADOR"));
     }
 
     @Test
