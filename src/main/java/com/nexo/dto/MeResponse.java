@@ -13,15 +13,15 @@ import java.util.UUID;
  * @param email        e-mail usado no login
  * @param papel        perfil de acesso
  */
-public record UsuarioAutenticadoResponse(
+public record MeResponse(
         UUID id,
         UUID tenantId,
         String nomeCompleto,
         String email,
         Perfil papel) {
 
-    public static UsuarioAutenticadoResponse de(UsuarioAutenticado usuario) {
-        return new UsuarioAutenticadoResponse(
+    public static MeResponse de(UsuarioAutenticado usuario) {
+        return new MeResponse(
                 usuario.getId(),
                 usuario.getTenantId(),
                 usuario.getNomeCompleto(),

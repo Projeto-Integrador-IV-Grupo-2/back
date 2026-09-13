@@ -2,7 +2,7 @@ package com.nexo.service;
 
 import com.nexo.dto.LoginRequest;
 import com.nexo.dto.LoginResponse;
-import com.nexo.dto.UsuarioAutenticadoResponse;
+import com.nexo.dto.MeResponse;
 import com.nexo.security.JwtService;
 import com.nexo.security.UsuarioAutenticado;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -38,10 +38,10 @@ public class AuthService {
         JwtService.Token token = jwtService.gerar(usuario);
 
         return LoginResponse.bearer(
-                token.valor(), token.expiraEm(), UsuarioAutenticadoResponse.de(usuario));
+                token.valor(), token.expiraEm(), MeResponse.de(usuario));
     }
 
-    public UsuarioAutenticadoResponse usuarioAtual(UsuarioAutenticado usuario) {
-        return UsuarioAutenticadoResponse.de(usuario);
+    public MeResponse usuarioAtual(UsuarioAutenticado usuario) {
+        return MeResponse.de(usuario);
     }
 }

@@ -30,11 +30,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtService jwtService;
-    private final UsuarioDetailsService usuarioDetailsService;
+    private final CustomUserDetailsService userDetailsService;
 
-    public JwtAuthenticationFilter(JwtService jwtService, UsuarioDetailsService usuarioDetailsService) {
+    public JwtAuthenticationFilter(JwtService jwtService, CustomUserDetailsService userDetailsService) {
         this.jwtService = jwtService;
-        this.usuarioDetailsService = usuarioDetailsService;
+        this.userDetailsService = userDetailsService;
     }
 
     @Override
@@ -59,7 +59,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private void autenticar(String email, HttpServletRequest request) {
         try {
-            UserDetails usuario = usuarioDetailsService.loadUserByUsername(email);
+            UserDetails usuario = userDetailsService.loadUserByUsername(email);
             // O token continua válido, mas o usuário pode ter sido desativado depois de emitido.
             if (!usuario.isEnabled()) {
                 log.debug("Token válido de usuário inativo ignorado");

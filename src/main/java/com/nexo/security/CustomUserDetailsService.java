@@ -11,11 +11,11 @@ import org.springframework.transaction.annotation.Transactional;
  * Carrega o usuário pelo e-mail para o Spring Security (login e filtro JWT).
  */
 @Service
-public class UsuarioDetailsService implements UserDetailsService {
+public class CustomUserDetailsService implements UserDetailsService {
 
     private final UsuarioRepository usuarioRepository;
 
-    public UsuarioDetailsService(UsuarioRepository usuarioRepository) {
+    public CustomUserDetailsService(UsuarioRepository usuarioRepository) {
         this.usuarioRepository = usuarioRepository;
     }
 

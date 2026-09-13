@@ -15,9 +15,9 @@ public record LoginResponse(
         String token,
         String tipo,
         Instant expiraEm,
-        UsuarioAutenticadoResponse usuario) {
+        MeResponse usuario) {
 
-    public static LoginResponse bearer(String token, Instant expiraEm, UsuarioAutenticadoResponse usuario) {
+    public static LoginResponse bearer(String token, Instant expiraEm, MeResponse usuario) {
         return new LoginResponse(token, "Bearer", expiraEm, usuario);
     }
 }

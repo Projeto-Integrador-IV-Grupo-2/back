@@ -2,7 +2,7 @@ package com.nexo.controller;
 
 import com.nexo.dto.LoginRequest;
 import com.nexo.dto.LoginResponse;
-import com.nexo.dto.UsuarioAutenticadoResponse;
+import com.nexo.dto.MeResponse;
 import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.AuthService;
 import jakarta.validation.Valid;
@@ -33,7 +33,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UsuarioAutenticadoResponse> me(@AuthenticationPrincipal UsuarioAutenticado usuario) {
+    public ResponseEntity<MeResponse> me(@AuthenticationPrincipal UsuarioAutenticado usuario) {
         return ResponseEntity.ok(authService.usuarioAtual(usuario));
     }
 }
