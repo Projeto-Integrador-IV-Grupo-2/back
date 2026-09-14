@@ -17,6 +17,7 @@ já roda localmente e está pronta para receber os módulos de **autenticação*
 | Migrations | Flyway | — |
 | Segurança | Spring Security | — |
 | Validação | Bean Validation | — |
+| Boilerplate | Lombok | — |
 | Monitoramento | Spring Boot Actuator | — |
 | Build | Maven (via wrapper `./mvnw`) | — |
 | Testes | JUnit 5 + Spring Test + Testcontainers | — |
@@ -152,14 +153,15 @@ segue o padrão MVC em camadas:
 | `config` | Configurações da aplicação: `@Configuration`, beans, CORS, leitura de *properties*. | `CorsConfig.java` |
 | `controller` | Endpoints REST. Recebe a requisição HTTP, chama o `service` e devolve a resposta. **Sem regra de negócio.** | `UserController.java` (`POST /api/users`) |
 | `dto` | Formato dos dados que **entram e saem** da API (corpo de request/response). Nunca expor a `entity` direto. | `CreateUserRequest.java`, `UserResponse.java` |
-| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UserService.java` |
-| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `interface UserRepository extends JpaRepository<User, UUID>` |
-| `entity` | Classes `@Entity` que representam as tabelas do banco. | `User.java` (tabela `users`) |
+| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UsuarioService.java` |
+| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `UsuarioRepository`, `UsuarioSpecifications` |
+| `entity` | Classes `@Entity` que representam as tabelas do banco. | `Usuario.java` (tabela `usuario`) |
 | `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, futuro `JwtAuthFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
 
-> As pastas `entity`, `repository` e `service` estão vazias por enquanto (só com
-> um arquivo `.gitkeep` para o Git manter a pasta). Os próximos módulos preenchem.
+> `entity` e `repository` já têm o mapeamento de `tenant`, `area`, `cargo` e
+> `usuario`. A pasta `service` continua vazia (só com um `.gitkeep` para o Git
+> manter a pasta): a regra de negócio entra com o módulo de usuários.
 
 ### Como as camadas conversam
 
@@ -187,10 +189,34 @@ o `controller` devolve como JSON.
 | Caminho | Para quê |
 |---|---|
 | `src/main/resources/application.yml` | Configuração da app + perfis `dev` e `test` |
-| `src/main/resources/db/migration/` | Migrations do Flyway (`V1__init.sql`, ...) |
+| `src/main/resources/db/migration/` | Migrations do Flyway (`V1__init.sql` … `V5__seed_initial_admin.sql`) |
 | `src/test/java/com/nexo/` | Testes automatizados |
 | `.github/workflows/` | Pipeline de CI (build + testes) |
 | `.github/pull_request_template.md` | Checklist que aparece ao abrir um PR |
+
+---
+
+## Lombok
+
+O projeto usa [Lombok](https://projectlombok.org/) para não escrever à mão
+construtor de injeção, logger e builder. O que está em uso hoje:
+
+| Anotação | Onde | O que ela substitui |
+|---|---|---|
+| `@RequiredArgsConstructor` | `HealthController` | Construtor que recebe os campos `final` |
+| `@Slf4j` | `GlobalExceptionHandler` | `private static final Logger log = LoggerFactory.getLogger(...)` |
+| `@Builder` | `ApiError` | Construtor com seis argumentos posicionais |
+| `@StandardException` | `ResourceNotFoundException` | Os quatro construtores padrão de exceção |
+
+O [`lombok.config`](lombok.config) na raiz do projeto manda o Lombok copiar
+`@Value` e `@Qualifier` do campo para o parâmetro do construtor gerado — é isso
+que faz `@RequiredArgsConstructor` funcionar junto com injeção de propriedade.
+
+**No IDE:** instale o plugin do Lombok (IntelliJ: *Settings → Plugins → Lombok*;
+VS Code: extensão *Lombok Annotations Support*) e deixe o *annotation
+processing* ligado. Sem o plugin o editor acusa erro em métodos gerados, mesmo
+com o `./mvnw` compilando normalmente. A dependência é `optional` e não vai
+dentro do `.jar` final.
 
 ---
 
@@ -209,7 +235,11 @@ define-se a variável e ela prevalece.
 | `DB_NAME` | `nexo` | Nome do banco |
 | `DB_USERNAME` | `nexo` | Usuário do banco |
 | `DB_PASSWORD` | `nexo` | Senha do banco |
+| `DB_POOL_MAX` | `10` | Tamanho máximo do pool de conexões (HikariCP) |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Origens do frontend liberadas no CORS (separadas por vírgula) |
+| `CORS_ALLOWED_METHODS` | `GET,POST,PUT,PATCH,DELETE,OPTIONS` | Métodos HTTP liberados no CORS |
+| `CORS_ALLOWED_HEADERS` | `*` | Cabeçalhos liberados no CORS |
+| `CORS_ALLOW_CREDENTIALS` | `true` | Permite cookies/`Authorization` vindos do browser |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
@@ -254,9 +284,40 @@ do PR. O workflow **não usa segredos**.
 ## Migrations (Flyway)
 
 - Local: `src/main/resources/db/migration/`
-- Nome: `V<número>__descricao_curta.sql` — ex.: `V2__create_users_table.sql`
+- Nome: `V<número>__descricao_curta.sql` — ex.: `V4__create_users.sql`
 - Rodam **sozinhas** no start da API e no início dos testes.
 - **Nunca edite** uma migration já aplicada — crie sempre a próxima versão.
+- O schema é propriedade do Flyway: o JPA roda com `ddl-auto: validate`, então
+  toda `@Entity` precisa bater exatamente com a tabela migrada, senão a
+  aplicação nem sobe.
+
+### O que já existe no banco
+
+| Versão | Arquivo | O que cria |
+|---|---|---|
+| V1 | `V1__init.sql` | Extensão `pgcrypto` (habilita `gen_random_uuid()`) |
+| V2 | `V2__create_tenant_and_catalogs.sql` | Tabelas `tenant`, `area` e `cargo` |
+| V3 | `V3__create_user_profiles.sql` | Enum `papel_usuario` (`ADMIN`, `GESTOR`, `COLABORADOR`) |
+| V4 | `V4__create_users.sql` | Tabela `usuario` + índices de login e de filtro |
+| V5 | `V5__seed_initial_admin.sql` | Semeia o tenant `nexo` e o admin `admin@nexo.com` (idempotente) |
+
+Regras do modelo que o código precisa respeitar:
+
+- **Multi-tenant:** `area`, `cargo` e `usuario` têm `tenant_id` obrigatório. O
+  e-mail é único **por tenant** (`uq_usuario_tenant_email`), não global — toda
+  consulta de domínio filtra por tenant.
+- **Senha:** `usuario.senha_hash` tem um CHECK que só aceita hash BCrypt (com o
+  prefixo `{bcrypt}` opcional). Senha em texto puro é recusada pelo banco.
+- **Hierarquia:** `usuario.gestor_id` é auto-referência (o gestor é outro usuário).
+- **Nomes:** tabelas e colunas em **português e no singular** (`usuario`,
+  `nome_completo`, `criado_em`).
+- `MigrationSchemaTest` valida o enum, o seed, a unicidade por tenant, o CHECK de
+  BCrypt e os índices contra um PostgreSQL real. Migration nova que mude esses
+  contratos quebra o teste.
+
+> O hash do admin semeado é um BCrypt de exemplo, público, só para o ambiente
+> local. Troque a senha antes de subir qualquer ambiente que não seja a máquina
+> do desenvolvedor.
 
 ---
 
