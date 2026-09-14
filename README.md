@@ -156,9 +156,9 @@ o token e o envia em toda requisição no cabeçalho
 
 Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
 `/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
-rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMINISTRADOR`
-(role `ROLE_ADMINISTRADOR`) — é o prefixo reservado para os endpoints
-administrativos, e um colaborador recebe `403` nelas.
+rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN`
+(role `ROLE_ADMIN`) — é o prefixo reservado para os endpoints administrativos,
+e um colaborador recebe `403` nelas.
 
 ```bash
 # 1. login
@@ -194,12 +194,12 @@ segue o padrão MVC em camadas:
 | `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UsuarioService.java` |
 | `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `UsuarioRepository`, `UsuarioSpecifications` |
 | `entity` | Classes `@Entity` que representam as tabelas do banco. | `Usuario.java` (tabela `usuario`) |
-| `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, futuro `JwtAuthFilter.java` |
+| `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, `JwtAuthenticationFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
 
 > `entity` e `repository` já têm o mapeamento de `tenant`, `area`, `cargo` e
-> `usuario`. A pasta `service` continua vazia (só com um `.gitkeep` para o Git
-> manter a pasta): a regra de negócio entra com o módulo de usuários.
+> `usuario`; `security` e `service` têm a autenticação (`AuthService`). O CRUD
+> de usuários entra no módulo seguinte.
 
 ### Como as camadas conversam
 
