@@ -153,14 +153,15 @@ segue o padrão MVC em camadas:
 | `config` | Configurações da aplicação: `@Configuration`, beans, CORS, leitura de *properties*. | `CorsConfig.java` |
 | `controller` | Endpoints REST. Recebe a requisição HTTP, chama o `service` e devolve a resposta. **Sem regra de negócio.** | `UserController.java` (`POST /api/users`) |
 | `dto` | Formato dos dados que **entram e saem** da API (corpo de request/response). Nunca expor a `entity` direto. | `CreateUserRequest.java`, `UserResponse.java` |
-| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UserService.java` |
-| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `interface UserRepository extends JpaRepository<User, UUID>` |
-| `entity` | Classes `@Entity` que representam as tabelas do banco. | `User.java` (tabela `usuario`) |
+| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UsuarioService.java` |
+| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `UsuarioRepository`, `UsuarioSpecifications` |
+| `entity` | Classes `@Entity` que representam as tabelas do banco. | `Usuario.java` (tabela `usuario`) |
 | `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, futuro `JwtAuthFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
 
-> As pastas `entity`, `repository` e `service` estão vazias por enquanto (só com
-> um arquivo `.gitkeep` para o Git manter a pasta). Os próximos módulos preenchem.
+> `entity` e `repository` já têm o mapeamento de `tenant`, `area`, `cargo` e
+> `usuario`. A pasta `service` continua vazia (só com um `.gitkeep` para o Git
+> manter a pasta): a regra de negócio entra com o módulo de usuários.
 
 ### Como as camadas conversam
 
