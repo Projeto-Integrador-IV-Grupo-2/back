@@ -13,7 +13,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Valida, contra um PostgreSQL real (Testcontainers, perfil {@code test}), que
- * as migrations Flyway V1..V6 produzem o schema esperado:
+ * as migrations Flyway V1..V5 produzem o schema esperado:
  *
  * <ul>
  *   <li>rodam em banco vazio (se falhassem, o contexto nem subia);</li>
@@ -44,7 +44,7 @@ class MigrationSchemaTest {
                         + "WHERE t.typname = 'papel_usuario' "
                         + "ORDER BY e.enumsortorder", String.class);
 
-        assertThat(papeis).contains("ADMINISTRADOR", "COLABORADOR");
+        assertThat(papeis).contains("ADMIN", "COLABORADOR");
     }
 
     @Test
@@ -55,7 +55,7 @@ class MigrationSchemaTest {
 
         String papel = jdbc.queryForObject(
                 "SELECT papel::text FROM usuario WHERE email = 'admin@nexo.com'", String.class);
-        assertThat(papel).isEqualTo("ADMINISTRADOR");
+        assertThat(papel).isEqualTo("ADMIN");
 
         Boolean ativo = jdbc.queryForObject(
                 "SELECT ativo FROM usuario WHERE email = 'admin@nexo.com'", Boolean.class);

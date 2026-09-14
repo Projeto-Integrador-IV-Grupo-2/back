@@ -1,7 +1,7 @@
 package com.nexo.entity;
 
 public enum Perfil {
-    ADMINISTRADOR,
+    ADMIN,
     GESTOR,
     COLABORADOR
 }

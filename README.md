@@ -17,6 +17,7 @@ já roda localmente e está pronta para receber os módulos de **autenticação*
 | Migrations | Flyway | — |
 | Segurança | Spring Security | — |
 | Validação | Bean Validation | — |
+| Boilerplate | Lombok | — |
 | Monitoramento | Spring Boot Actuator | — |
 | Build | Maven (via wrapper `./mvnw`) | — |
 | Testes | JUnit 5 + Spring Test + Testcontainers | — |
@@ -155,9 +156,9 @@ o token e o envia em toda requisição no cabeçalho
 
 Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
 `/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
-rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMINISTRADOR`
-(role `ROLE_ADMINISTRADOR`) — é o prefixo reservado para os endpoints
-administrativos, e um colaborador recebe `403` nelas.
+rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN`
+(role `ROLE_ADMIN`) — é o prefixo reservado para os endpoints administrativos,
+e um colaborador recebe `403` nelas.
 
 ```bash
 # 1. login (administrador inicial, apenas em dev/test)
@@ -200,14 +201,15 @@ segue o padrão MVC em camadas:
 | `config` | Configurações da aplicação: `@Configuration`, beans, CORS, leitura de *properties*. | `CorsConfig.java` |
 | `controller` | Endpoints REST. Recebe a requisição HTTP, chama o `service` e devolve a resposta. **Sem regra de negócio.** | `UserController.java` (`POST /api/users`) |
 | `dto` | Formato dos dados que **entram e saem** da API (corpo de request/response). Nunca expor a `entity` direto. | `CreateUserRequest.java`, `UserResponse.java` |
-| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UserService.java` |
-| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `interface UserRepository extends JpaRepository<User, UUID>` |
-| `entity` | Classes `@Entity` que representam as tabelas do banco. | `User.java` (tabela `users`) |
+| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UsuarioService.java` |
+| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `UsuarioRepository`, `UsuarioSpecifications` |
+| `entity` | Classes `@Entity` que representam as tabelas do banco. | `Usuario.java` (tabela `usuario`) |
 | `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, `JwtAuthenticationFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
 
-> Os módulos de usuários e autenticação já preenchem `entity`, `repository`,
-> `service` e `security`.
+> `entity` e `repository` já têm o mapeamento de `tenant`, `area`, `cargo` e
+> `usuario`; `security` e `service` têm a autenticação (`AuthService`). O CRUD
+> de usuários entra no módulo seguinte.
 
 ### Como as camadas conversam
 
@@ -235,10 +237,34 @@ o `controller` devolve como JSON.
 | Caminho | Para quê |
 |---|---|
 | `src/main/resources/application.yml` | Configuração da app + perfis `dev` e `test` |
-| `src/main/resources/db/migration/` | Migrations do Flyway (`V1__init.sql`, ...) |
+| `src/main/resources/db/migration/` | Migrations do Flyway (`V1__init.sql` … `V5__seed_initial_admin.sql`) |
 | `src/test/java/com/nexo/` | Testes automatizados |
 | `.github/workflows/` | Pipeline de CI (build + testes) |
 | `.github/pull_request_template.md` | Checklist que aparece ao abrir um PR |
+
+---
+
+## Lombok
+
+O projeto usa [Lombok](https://projectlombok.org/) para não escrever à mão
+construtor de injeção, logger e builder. O que está em uso hoje:
+
+| Anotação | Onde | O que ela substitui |
+|---|---|---|
+| `@RequiredArgsConstructor` | `HealthController` | Construtor que recebe os campos `final` |
+| `@Slf4j` | `GlobalExceptionHandler` | `private static final Logger log = LoggerFactory.getLogger(...)` |
+| `@Builder` | `ApiError` | Construtor com seis argumentos posicionais |
+| `@StandardException` | `ResourceNotFoundException` | Os quatro construtores padrão de exceção |
+
+O [`lombok.config`](lombok.config) na raiz do projeto manda o Lombok copiar
+`@Value` e `@Qualifier` do campo para o parâmetro do construtor gerado — é isso
+que faz `@RequiredArgsConstructor` funcionar junto com injeção de propriedade.
+
+**No IDE:** instale o plugin do Lombok (IntelliJ: *Settings → Plugins → Lombok*;
+VS Code: extensão *Lombok Annotations Support*) e deixe o *annotation
+processing* ligado. Sem o plugin o editor acusa erro em métodos gerados, mesmo
+com o `./mvnw` compilando normalmente. A dependência é `optional` e não vai
+dentro do `.jar` final.
 
 ---
 
@@ -257,14 +283,11 @@ define-se a variável e ela prevalece.
 | `DB_NAME` | `nexo` | Nome do banco |
 | `DB_USERNAME` | `nexo` | Usuário do banco |
 | `DB_PASSWORD` | `nexo` | Senha do banco |
+| `DB_POOL_MAX` | `10` | Tamanho máximo do pool de conexões (HikariCP) |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Origens do frontend liberadas no CORS (separadas por vírgula) |
-| `JWT_SECRET` | chave de dev (só nos perfis `dev` e `test`) | Chave de assinatura do token JWT (mínimo 32 caracteres) |
-| `JWT_ISSUER` | `nexo-api` | Emissor gravado e exigido na validação do token |
-| `JWT_EXPIRATION` | `PT2H` | Validade do token no formato ISO-8601 (ex.: `PT30M`, `PT8H`) |
-
-> **`JWT_SECRET`:** em `dev` e `test` há um valor default (que não é segredo)
-> para a API subir sem configuração. Em qualquer outro ambiente a aplicação
-> **não inicia** sem essa variável definida.
+| `CORS_ALLOWED_METHODS` | `GET,POST,PUT,PATCH,DELETE,OPTIONS` | Métodos HTTP liberados no CORS |
+| `CORS_ALLOWED_HEADERS` | `*` | Cabeçalhos liberados no CORS |
+| `CORS_ALLOW_CREDENTIALS` | `true` | Permite cookies/`Authorization` vindos do browser |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
@@ -309,11 +332,42 @@ do PR. O workflow **não usa segredos**.
 ## Migrations (Flyway)
 
 - Local: `src/main/resources/db/migration/`
-- Nome: `V<número>__descricao_curta.sql` — ex.: `V2__create_users_table.sql`
+- Nome: `V<número>__descricao_curta.sql` — ex.: `V4__create_users.sql`
 - Rodam **sozinhas** no start da API e no início dos testes.
 - **Nunca edite** uma migration já aplicada — crie sempre a próxima versão.
 - `src/main/resources/db/seed/` guarda dados de conveniência (migrations
   repetíveis `R__`) e **só roda nos perfis `dev` e `test`**.
+- O schema é propriedade do Flyway: o JPA roda com `ddl-auto: validate`, então
+  toda `@Entity` precisa bater exatamente com a tabela migrada, senão a
+  aplicação nem sobe.
+
+### O que já existe no banco
+
+| Versão | Arquivo | O que cria |
+|---|---|---|
+| V1 | `V1__init.sql` | Extensão `pgcrypto` (habilita `gen_random_uuid()`) |
+| V2 | `V2__create_tenant_and_catalogs.sql` | Tabelas `tenant`, `area` e `cargo` |
+| V3 | `V3__create_user_profiles.sql` | Enum `papel_usuario` (`ADMIN`, `GESTOR`, `COLABORADOR`) |
+| V4 | `V4__create_users.sql` | Tabela `usuario` + índices de login e de filtro |
+| V5 | `V5__seed_initial_admin.sql` | Semeia o tenant `nexo` e o admin `admin@nexo.com` (idempotente) |
+
+Regras do modelo que o código precisa respeitar:
+
+- **Multi-tenant:** `area`, `cargo` e `usuario` têm `tenant_id` obrigatório. O
+  e-mail é único **por tenant** (`uq_usuario_tenant_email`), não global — toda
+  consulta de domínio filtra por tenant.
+- **Senha:** `usuario.senha_hash` tem um CHECK que só aceita hash BCrypt (com o
+  prefixo `{bcrypt}` opcional). Senha em texto puro é recusada pelo banco.
+- **Hierarquia:** `usuario.gestor_id` é auto-referência (o gestor é outro usuário).
+- **Nomes:** tabelas e colunas em **português e no singular** (`usuario`,
+  `nome_completo`, `criado_em`).
+- `MigrationSchemaTest` valida o enum, o seed, a unicidade por tenant, o CHECK de
+  BCrypt e os índices contra um PostgreSQL real. Migration nova que mude esses
+  contratos quebra o teste.
+
+> O hash gravado pela `V5` não corresponde a nenhuma senha conhecida. Quem torna
+> o admin utilizável em `dev` e `test` é o seed repetível — ver
+> [Administrador inicial](#administrador-inicial).
 
 ---
 
