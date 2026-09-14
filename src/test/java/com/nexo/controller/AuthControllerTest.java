@@ -80,7 +80,7 @@ class AuthControllerTest {
     void administradorInicialEntraComASenhaDocumentada() throws Exception {
         mockMvc.perform(login("admin@nexo.com", "admin123"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.usuario.papel").value("ADMINISTRADOR"));
+                .andExpect(jsonPath("$.usuario.papel").value("ADMIN"));
     }
 
     @Test
