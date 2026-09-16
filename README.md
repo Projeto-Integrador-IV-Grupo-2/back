@@ -31,7 +31,7 @@ Só três coisas. Instale, abra um terminal novo e confira com o comando da
 
 | Ferramenta | Versão | Para quê serve | Conferir |
 |---|---|---|---|
-| **JDK 21** | 21 | Compilar e rodar a API | `java -version` → deve mostrar `21` |
+| **JDK 17** | 17 | Compilar e rodar a API | `java -version` → deve mostrar `17` |
 | **Docker Desktop** | atual | Subir o PostgreSQL e rodar os testes | `docker --version` |
 | **Git** | qualquer | Clonar e versionar o código | `git --version` |
 
@@ -39,14 +39,14 @@ Só três coisas. Instale, abra um terminal novo e confira com o comando da
 > `./mvnw` no Linux/macOS ou `mvnw.cmd` no Windows. Ele baixa a versão certa
 > do Maven sozinho na primeira execução.
 
-Links: [JDK 21 (Temurin)](https://adoptium.net/temurin/releases/?version=21) ·
+Links: [JDK 17 (Temurin)](https://adoptium.net/temurin/releases/?version=17) ·
 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
 ---
 
 ## Como rodar
 
-Tenha o **Docker Desktop aberto** e o **JDK 21** instalado
+Tenha o **Docker Desktop aberto** e o **JDK 17** instalado
 (ver [O que instalar](#o-que-instalar)).
 
 Abra um terminal na pasta do projeto e rode **os dois comandos, nesta ordem**:
@@ -69,7 +69,7 @@ com estes valores (definidos no [`docker-compose.yml`](docker-compose.yml)):
 | Host / porta | `localhost:5432` |
 
 Funciona igual em **Windows, macOS e Linux** — basta ter o Docker Desktop
-aberto e o JDK 21. Cada integrante roda os mesmos dois comandos, sem ajustar
+aberto e o JDK 17. Cada integrante roda os mesmos dois comandos, sem ajustar
 arquivo nenhum. (Só cria um `.env` quem quiser mudar algum desses valores;
 veja [Variáveis de ambiente](#variáveis-de-ambiente).)
 
@@ -290,7 +290,7 @@ estável), também via PR.
 **O que ele faz:**
 
 1. Baixa o código.
-2. Instala o **JDK 21** (com cache do Maven).
+2. Instala o **JDK 17** (com cache do Maven).
 3. Roda `./mvnw verify` — compila e executa **todos os testes** (o Docker do
    runner cobre o Testcontainers).
 

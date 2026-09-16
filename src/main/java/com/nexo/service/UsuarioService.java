@@ -37,12 +37,12 @@ import org.springframework.transaction.annotation.Transactional;
  * (nunca 403), para não revelar a um administrador que aquele registro
  * existe em outra empresa.
  *
- * <p>Hoje isso exige uma consulta extra (buscar o Usuario do próprio
- * requisitante para ler {@code getTenant()}), porque a autenticação
- * JWT/tenant-claim ainda não está integrada nesta branch. Quando o módulo de
- * auth (branch {@code feat/autenticacao-jwt}) for mesclado e o tenant passar
- * a vir como claim do token, {@link #tenantDoRequisitante} pode ser
- * simplificado para ler direto da autenticação, sem ida ao banco.</p>
+ * <p>Isso custa uma consulta extra por requisição (buscar o Usuario do
+ * próprio requisitante para ler {@code getTenant()}) — embora o token JWT já
+ * carregue o {@code tenantId} como claim (ver {@code JwtService}), este
+ * serviço ainda recebe só o e-mail do requisitante. {@link #tenantDoRequisitante}
+ * é o ponto único para trocar essa resolução por uma leitura direta da
+ * autenticação, sem ida ao banco.</p>
  */
 @Service
 public class UsuarioService {

@@ -29,18 +29,12 @@ import org.springframework.web.util.UriComponentsBuilder;
 /**
  * Endpoints REST de cadastro e gerenciamento de usuários administrativos.
  *
- * <p>Restrito ao perfil Administrador via {@link PreAuthorize}. IMPORTANTE:
- * o nome do papel aqui ({@code ADMIN}) precisa ficar sincronizado com
- * {@code com.nexo.entity.Perfil} — nesta branch (baseada em {@code dev})
- * ainda é {@code ADMIN}. A branch {@code feat/autenticacao-jwt} (ainda não
- * mesclada) já tem um commit renomeando para {@code ADMINISTRADOR}; quando
- * ela for integrada, troque aqui junto.</p>
- *
- * <p>A autenticação em si (JWT) é responsabilidade do módulo de auth, ainda
- * não mesclado nesta branch — mas para {@link PreAuthorize} funcionar, o
- * principal autenticado precisa carregar a authority {@code ROLE_ADMIN}. Um
- * colaborador autenticado sem essa authority recebe HTTP 403 automaticamente
- * (tratado por {@code GlobalExceptionHandler.handleAccessDenied}).</p>
+ * <p>Restrito ao perfil Administrador via {@link PreAuthorize}, comparando
+ * com {@code com.nexo.entity.Perfil.ADMIN}. Para isso funcionar, o principal
+ * autenticado (JWT, validado por {@code JwtAuthenticationFilter}) precisa
+ * carregar a authority {@code ROLE_ADMIN}. Um colaborador autenticado sem
+ * essa authority recebe HTTP 403 automaticamente (tratado por
+ * {@code GlobalExceptionHandler.handleAccessDenied}).</p>
  *
  * <p>Nenhuma regra de negócio vive aqui — tudo é delegado a
  * {@link UsuarioService}; este controller só traduz HTTP &lt;-&gt; DTO.</p>
