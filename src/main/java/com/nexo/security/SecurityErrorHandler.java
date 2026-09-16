@@ -42,12 +42,8 @@ public class SecurityErrorHandler implements AuthenticationEntryPoint, AccessDen
 
     private void escrever(HttpServletRequest request, HttpServletResponse response,
                           HttpStatus status, String mensagem) throws IOException {
-        ApiError corpo = ApiError.builder()
-                .status(status.value())
-                .error(status.getReasonPhrase())
-                .message(mensagem)
-                .path(request.getRequestURI())
-                .build();
+        ApiError corpo = ApiError.of(
+                status.value(), status.getReasonPhrase(), mensagem, request.getRequestURI());
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");

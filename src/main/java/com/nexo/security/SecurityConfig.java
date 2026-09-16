@@ -27,6 +27,12 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * antes da autenticação padrão do Spring Security. Continuam públicos apenas os
  * endpoints de infraestrutura e o login; todo o restante exige token, e as rotas
  * administrativas exigem também o perfil ADMIN.</p>
+ *
+ * <p>{@link EnableMethodSecurity} habilita {@code @PreAuthorize} nos
+ * controllers (é o que restringe {@code UsuarioController} ao perfil
+ * Administrador). O bean {@link PasswordEncoder} (BCrypt) é usado tanto pelo
+ * login quanto pelo {@code UsuarioService}, para nunca persistir senha em
+ * texto puro.</p>
  */
 @Configuration
 @EnableWebSecurity
