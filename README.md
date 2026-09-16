@@ -161,19 +161,29 @@ rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN`
 e um colaborador recebe `403` nelas.
 
 ```bash
-# 1. login
+# 1. login (administrador inicial, apenas em dev/test)
 curl -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"seu.email@nexo.com","senha":"sua-senha"}'
+  -d '{"email":"admin@nexo.com","senha":"admin123"}'
 
 # 2. usar o token devolvido
 curl http://localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'
 ```
 
-> **Atenção:** o administrador criado pela migration `V5__seed_initial_admin.sql`
-> (`admin@nexo.com`) tem um hash BCrypt cuja senha não é conhecida — ou seja,
-> ainda **não é possível entrar com ele**. Enquanto uma migration nova não
-> corrigir esse hash, use um usuário criado com senha conhecida.
+### Administrador inicial
+
+| Ambiente | E-mail | Senha |
+|---|---|---|
+| `dev` e `test` | `admin@nexo.com` | `admin123` |
+| demais | `admin@nexo.com` | sem senha utilizável |
+
+O usuário é criado pela migration `V5__seed_initial_admin.sql`, mas com um hash
+que não corresponde a nenhuma senha conhecida. Quem define a senha acima é
+[`db/seed/R__senha_do_admin_inicial.sql`](src/main/resources/db/seed/R__senha_do_admin_inicial.sql)
+— e essa pasta **só é carregada nos perfis `dev` e `test`**
+(`spring.flyway.locations`), de propósito: senha pública não entra em ambiente
+real. Em produção, a senha do administrador precisa ser definida fora do
+versionamento.
 
 Respostas de erro seguem o mesmo formato do resto da API: **401** quando falta
 token ou as credenciais não conferem, **403** para usuário inativo ou sem
@@ -325,6 +335,8 @@ do PR. O workflow **não usa segredos**.
 - Nome: `V<número>__descricao_curta.sql` — ex.: `V4__create_users.sql`
 - Rodam **sozinhas** no start da API e no início dos testes.
 - **Nunca edite** uma migration já aplicada — crie sempre a próxima versão.
+- `src/main/resources/db/seed/` guarda dados de conveniência (migrations
+  repetíveis `R__`) e **só roda nos perfis `dev` e `test`**.
 - O schema é propriedade do Flyway: o JPA roda com `ddl-auto: validate`, então
   toda `@Entity` precisa bater exatamente com a tabela migrada, senão a
   aplicação nem sobe.
@@ -353,9 +365,9 @@ Regras do modelo que o código precisa respeitar:
   BCrypt e os índices contra um PostgreSQL real. Migration nova que mude esses
   contratos quebra o teste.
 
-> O hash do admin semeado é um BCrypt de exemplo, público, só para o ambiente
-> local. Troque a senha antes de subir qualquer ambiente que não seja a máquina
-> do desenvolvedor.
+> O hash gravado pela `V5` não corresponde a nenhuma senha conhecida. Quem torna
+> o admin utilizável em `dev` e `test` é o seed repetível — ver
+> [Administrador inicial](#administrador-inicial).
 
 ---
 

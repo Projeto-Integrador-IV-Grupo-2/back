@@ -27,7 +27,7 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 class MigrationSchemaTest {
 
-    /** Hash BCrypt válido (de "password") reutilizado nos inserts de teste. */
+    /** Hash BCrypt bem-formado, reutilizado nos inserts de teste; a senha de origem é irrelevante aqui. */
     private static final String BCRYPT_HASH =
             "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
