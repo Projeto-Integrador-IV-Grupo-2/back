@@ -2,8 +2,10 @@ package com.nexo.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import java.time.Instant;
 import java.util.List;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -18,9 +20,10 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 /**
  * Traduz exceções da aplicação para respostas {@link ApiError} consistentes.
  */
-@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
@@ -32,9 +35,13 @@ public class GlobalExceptionHandler {
         List<ApiError.FieldValidationError> fields = ex.getBindingResult().getFieldErrors().stream()
                 .map(this::toFieldError)
                 .toList();
-        ApiError body = errorBody(HttpStatus.BAD_REQUEST, "Falha de validação", request)
-                .fieldErrors(fields)
-                .build();
+        ApiError body = new ApiError(
+                Instant.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                "Falha de validação",
+                request.getRequestURI(),
+                fields);
         return ResponseEntity.badRequest().body(body);
     }
 
@@ -108,14 +115,7 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest request) {
-        return ResponseEntity.status(status).body(errorBody(status, message, request).build());
-    }
-
-    private ApiError.ApiErrorBuilder errorBody(HttpStatus status, String message, HttpServletRequest request) {
-        return ApiError.builder()
-                .status(status.value())
-                .error(status.getReasonPhrase())
-                .message(message)
-                .path(request.getRequestURI());
+        ApiError body = ApiError.of(status.value(), status.getReasonPhrase(), message, request.getRequestURI());
+        return ResponseEntity.status(status).body(body);
     }
 }

@@ -78,13 +78,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Redução de boilerplate (getters, construtores, logger) -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-
         <!-- Metadados de configuração para o IDE (app.cors.*) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -130,10 +123,6 @@
                         <exclude>
                             <groupId>org.springframework.boot</groupId>
                             <artifactId>spring-boot-configuration-processor</artifactId>
-                        </exclude>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
                 </configuration>
