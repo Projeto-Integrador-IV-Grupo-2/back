@@ -196,8 +196,7 @@ class UsuarioServiceTest {
 
         assertThat(response.situacao()).isEqualTo(SituacaoUsuario.INATIVO);
         verify(usuarioRepository, never()).deleteById(any());
-        verify(usuarioRepository, never()).delete(any());
-    }
+        verify(usuarioRepository, never()).delete((Usuario) any());    }
 
     @Test
     void reativaUsuarioDesativado() {
