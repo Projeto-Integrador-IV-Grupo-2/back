@@ -1,0 +1,89 @@
+package com.nexo.security;
+
+import com.nexo.config.JwtProperties;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Date;
+import java.util.Optional;
+import javax.crypto.SecretKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/**
+ * Emite e valida os tokens JWT de acesso da API.
+ *
+ * <p>O token é assinado em HMAC-SHA com a chave de {@code app.jwt.secret} e
+ * carrega, além do identificador do usuário no {@code subject}, o e-mail, o
+ * papel e o tenant — dados que o filtro usa para reconstruir a autenticação sem
+ * ir ao banco a cada requisição.</p>
+ */
+@Service
+public class JwtService {
+
+    static final String CLAIM_EMAIL = "email";
+    static final String CLAIM_PAPEL = "papel";
+    static final String CLAIM_TENANT = "tenantId";
+
+    private static final Logger log = LoggerFactory.getLogger(JwtService.class);
+
+    private final SecretKey chave;
+    private final String emissor;
+    private final Duration validade;
+
+    public JwtService(JwtProperties propriedades) {
+        this.chave = Keys.hmacShaKeyFor(propriedades.secret().getBytes(StandardCharsets.UTF_8));
+        this.emissor = propriedades.issuer();
+        this.validade = propriedades.expiration();
+    }
+
+    /** Gera um token de acesso para o usuário recém-autenticado. */
+    public Token gerar(UsuarioAutenticado usuario) {
+        Instant agora = Instant.now();
+        Instant expiraEm = agora.plus(validade);
+        String valor = Jwts.builder()
+                .subject(usuario.getId().toString())
+                .issuer(emissor)
+                .issuedAt(Date.from(agora))
+                .expiration(Date.from(expiraEm))
+                .claim(CLAIM_EMAIL, usuario.getEmail())
+                .claim(CLAIM_PAPEL, usuario.getPapel().name())
+                .claim(CLAIM_TENANT, usuario.getTenantId().toString())
+                .signWith(chave)
+                .compact();
+        return new Token(valor, expiraEm);
+    }
+
+    /**
+     * Valida assinatura, emissor e expiração.
+     *
+     * @return as claims do token, ou vazio quando ele é inválido por qualquer motivo
+     */
+    public Optional<Claims> validar(String token) {
+        try {
+            return Optional.of(Jwts.parser()
+                    .verifyWith(chave)
+                    .requireIssuer(emissor)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload());
+        } catch (JwtException | IllegalArgumentException ex) {
+            log.debug("Token JWT rejeitado: {}", ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /** E-mail do dono do token, quando o token é válido. */
+    public Optional<String> extrairEmail(String token) {
+        return validar(token).map(claims -> claims.get(CLAIM_EMAIL, String.class));
+    }
+
+    /** Token assinado e o instante em que ele deixa de valer. */
+    public record Token(String valor, Instant expiraEm) {
+    }
+}
