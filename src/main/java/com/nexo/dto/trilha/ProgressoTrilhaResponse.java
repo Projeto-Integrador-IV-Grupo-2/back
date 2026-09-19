@@ -40,6 +40,17 @@ public record ProgressoTrilhaResponse(
                 progresso.getConcluidoEm());
     }
 
+    /**
+     * Representa a ausência de registro em {@code trilha_atribuicao} (usuário
+     * nunca acessou a trilha) — usado pelo detalhe de trilha (Card 08), que
+     * precisa mostrar "não iniciado" em vez de 404. {@code id} nulo é o sinal
+     * de que não existe atribuição persistida.
+     */
+    public static ProgressoTrilhaResponse naoIniciado(Trilha trilha) {
+        return new ProgressoTrilhaResponse(
+                null, recursoDe(trilha), StatusAtribuicao.NAO_INICIADA, 0, null, null, null);
+    }
+
     private static Recurso recursoDe(Trilha trilha) {
         return new Recurso(trilha.getId(), trilha.getNome());
     }

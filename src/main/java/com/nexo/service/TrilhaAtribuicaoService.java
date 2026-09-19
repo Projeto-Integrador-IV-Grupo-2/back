@@ -83,6 +83,21 @@ public class TrilhaAtribuicaoService {
         return ProgressoTrilhaResponse.de(buscarProgressoDoRequisitante(trilhaId, requisitante));
     }
 
+    /**
+     * Progresso do requisitante numa trilha já resolvida no tenant (Card 08:
+     * detalhe da trilha), ou "não iniciado" se ele nunca acessou — ao
+     * contrário de {@link #buscarProgresso}, nunca lança 404 por falta de
+     * registro. Recebe a {@link Trilha} já carregada porque quem chama (ex.:
+     * {@code TrilhaService}) já validou tenant/existência; evita repetir essa
+     * consulta aqui.
+     */
+    @Transactional(readOnly = true)
+    public ProgressoTrilhaResponse buscarProgressoOuNaoIniciado(Trilha trilha, UsuarioAutenticado requisitante) {
+        return trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilha.getId(), requisitante.getId())
+                .map(ProgressoTrilhaResponse::de)
+                .orElseGet(() -> ProgressoTrilhaResponse.naoIniciado(trilha));
+    }
+
     private TrilhaAtribuicao criarProgresso(Trilha trilha, UsuarioAutenticado requisitante) {
         Usuario usuarioRef = usuarioRepository.getReferenceById(requisitante.getId());
 
