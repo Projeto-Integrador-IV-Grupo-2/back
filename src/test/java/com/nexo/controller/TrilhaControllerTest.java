@@ -1,0 +1,184 @@
+package com.nexo.controller;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexo.dto.LoginRequest;
+import com.nexo.dto.LoginResponse;
+import com.nexo.entity.Perfil;
+import com.nexo.entity.StatusAtribuicao;
+import com.nexo.entity.Tenant;
+import com.nexo.entity.Trilha;
+import com.nexo.entity.TrilhaAtribuicao;
+import com.nexo.entity.Usuario;
+import com.nexo.repository.TenantRepository;
+import com.nexo.repository.TrilhaAtribuicaoRepository;
+import com.nexo.repository.TrilhaRepository;
+import com.nexo.repository.UsuarioRepository;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Testes de integração de ponta a ponta (contexto Spring completo + Postgres
+ * efêmero via Testcontainers, igual a {@code UsuarioControllerTest}).
+ *
+ * <p>Autentica via login de verdade ({@code POST /api/auth/login}), não
+ * {@code @WithMockUser}: o controller usa {@code @AuthenticationPrincipal
+ * UsuarioAutenticado} (para ler o tenant sem consulta extra — ver
+ * {@code TrilhaService}), e só o filtro JWT real popula esse tipo de
+ * principal. {@code @WithMockUser} usaria um {@code UserDetails} genérico,
+ * que nunca é um {@code UsuarioAutenticado} e quebraria o endpoint.</p>
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Transactional
+class TrilhaControllerTest {
+
+    private static final String SENHA = "senha-de-teste-123";
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private UsuarioRepository usuarioRepository;
+
+    @Autowired
+    private TenantRepository tenantRepository;
+
+    @Autowired
+    private TrilhaRepository trilhaRepository;
+
+    @Autowired
+    private TrilhaAtribuicaoRepository trilhaAtribuicaoRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Test
+    void retorna200ComTrilhaEProgressoQuandoAmbosExistem() throws Exception {
+        Usuario usuario = criaUsuario(tenantSeed());
+        Trilha trilha = criaTrilha(usuario);
+        criaProgresso(trilha, usuario, StatusAtribuicao.EM_ANDAMENTO);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas/{id}", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(trilha.getId().toString()))
+                .andExpect(jsonPath("$.nome").value(trilha.getNome()))
+                .andExpect(jsonPath("$.progresso.status").value("EM_ANDAMENTO"))
+                .andExpect(jsonPath("$.progresso.percentual").value(50));
+    }
+
+    @Test
+    void retornaProgressoNaoIniciadoQuandoAplicavel() throws Exception {
+        Usuario usuario = criaUsuario(tenantSeed());
+        Trilha trilha = criaTrilha(usuario);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas/{id}", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.progresso.status").value("NAO_INICIADA"))
+                .andExpect(jsonPath("$.progresso.percentual").value(0))
+                .andExpect(jsonPath("$.progresso.id").doesNotExist());
+    }
+
+    @Test
+    void retorna404ParaTrilhaInexistente() throws Exception {
+        Usuario usuario = criaUsuario(tenantSeed());
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas/{id}", UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void retorna404ParaTrilhaDeOutroTenant() throws Exception {
+        Usuario usuario = criaUsuario(tenantSeed());
+        Tenant outroTenant = criaTenant();
+        Usuario criadorDeOutroTenant = criaUsuario(outroTenant);
+        Trilha trilhaDeOutroTenant = criaTrilha(criadorDeOutroTenant);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas/{id}", trilhaDeOutroTenant.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void exigeAutenticacao() throws Exception {
+        Trilha trilha = criaTrilha(criaUsuario(tenantSeed()));
+
+        mockMvc.perform(get("/api/trilhas/{id}", trilha.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private Tenant tenantSeed() {
+        return tenantRepository.findBySubdominio("nexo").orElseThrow();
+    }
+
+    private Tenant criaTenant() {
+        Tenant tenant = new Tenant();
+        tenant.setNome("Outra Empresa " + UUID.randomUUID());
+        tenant.setSubdominio("outra-" + UUID.randomUUID());
+        return tenantRepository.saveAndFlush(tenant);
+    }
+
+    private Usuario criaUsuario(Tenant tenant) {
+        Usuario usuario = new Usuario();
+        usuario.setTenant(tenant);
+        usuario.setNomeCompleto("Usuário de Teste");
+        usuario.setEmail("trilha-" + UUID.randomUUID() + "@nexo.com");
+        usuario.setSenhaHash(passwordEncoder.encode(SENHA));
+        usuario.setPapel(Perfil.COLABORADOR);
+        usuario.setAtivo(true);
+        return usuarioRepository.saveAndFlush(usuario);
+    }
+
+    private Trilha criaTrilha(Usuario criadoPor) {
+        Trilha trilha = new Trilha();
+        trilha.setTenant(criadoPor.getTenant());
+        trilha.setNome("Trilha de teste " + UUID.randomUUID());
+        trilha.setCriadoPor(criadoPor);
+        return trilhaRepository.saveAndFlush(trilha);
+    }
+
+    private void criaProgresso(Trilha trilha, Usuario usuario, StatusAtribuicao status) {
+        TrilhaAtribuicao progresso = new TrilhaAtribuicao();
+        progresso.setTenant(trilha.getTenant());
+        progresso.setTrilha(trilha);
+        progresso.setUsuario(usuario);
+        progresso.setAtribuidoPor(usuario);
+        progresso.setStatus(status);
+        trilhaAtribuicaoRepository.saveAndFlush(progresso);
+    }
+
+    private String tokenDe(Usuario usuario) throws Exception {
+        String corpo = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest(usuario.getEmail(), SENHA))))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readValue(corpo, LoginResponse.class).token();
+    }
+}
