@@ -321,6 +321,7 @@ do PR. O workflow **não usa segredos**.
 | V3 | `V3__create_user_profiles.sql` | Enum `papel_usuario` (`ADMIN`, `GESTOR`, `COLABORADOR`) |
 | V4 | `V4__create_users.sql` | Tabela `usuario` + índices de login e de filtro |
 | V5 | `V5__seed_initial_admin.sql` | Semeia o tenant `nexo` e o admin `admin@nexo.com` (idempotente) |
+| V6 | `V6__create_trilha.sql` | Tabela `trilha` + índices da listagem por tenant e por área |
 
 Regras do modelo que o código precisa respeitar:
 
@@ -330,6 +331,10 @@ Regras do modelo que o código precisa respeitar:
 - **Senha:** `usuario.senha_hash` tem um CHECK que só aceita hash BCrypt (com o
   prefixo `{bcrypt}` opcional). Senha em texto puro é recusada pelo banco.
 - **Hierarquia:** `usuario.gestor_id` é auto-referência (o gestor é outro usuário).
+- **Trilha:** o nome **não** é único no tenant (diferente de `area` e `cargo`) —
+  é o que o DER define. A área é opcional: uma trilha pode valer para a empresa
+  toda. As etapas (`trilha_etapa`) ainda não existem porque dependem da tabela
+  `conteudo`, que não está no schema.
 - **Nomes:** tabelas e colunas em **português e no singular** (`usuario`,
   `nome_completo`, `criado_em`).
 - `MigrationSchemaTest` valida o enum, o seed, a unicidade por tenant, o CHECK de
