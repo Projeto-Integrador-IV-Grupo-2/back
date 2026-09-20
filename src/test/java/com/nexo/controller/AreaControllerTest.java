@@ -169,6 +169,32 @@ class AreaControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    /**
+     * Isolamento multi-tenant: mesmo sendo administrador, o requisitante não
+     * enxerga nem alcança a área de outra empresa — e recebe 404, não 403,
+     * para a API não revelar que aquele registro existe.
+     */
+    @Test
+    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    void areaDeOutroTenantNaoApareceNemPodeSerAlcancada() throws Exception {
+        Area deOutraEmpresa = areaDeOutroTenant();
+
+        mockMvc.perform(get("/api/areas").param("incluirInativas", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + deOutraEmpresa.getId() + "')]").doesNotExist());
+
+        mockMvc.perform(get("/api/areas/{id}", deOutraEmpresa.getId()))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(put("/api/areas/{id}", deOutraEmpresa.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico()))))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(patch("/api/areas/{id}/inativar", deOutraEmpresa.getId()))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     @WithMockUser(username = COLABORADOR_EMAIL, roles = "COLABORADOR")
     void colaboradorLeAreasMasNaoPodeCriar() throws Exception {
@@ -202,6 +228,19 @@ class AreaControllerTest {
     void requisicaoSemAutenticacaoRetorna401() throws Exception {
         mockMvc.perform(get("/api/areas"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    private Area areaDeOutroTenant() {
+        Tenant outraEmpresa = new Tenant();
+        outraEmpresa.setNome("Outra Empresa");
+        outraEmpresa.setSubdominio("outra-" + UUID.randomUUID().toString().substring(0, 8));
+        tenantRepository.saveAndFlush(outraEmpresa);
+
+        Area area = new Area();
+        area.setTenant(outraEmpresa);
+        area.setNome(nomeUnico());
+        area.setAtivo(true);
+        return areaRepository.saveAndFlush(area);
     }
 
     private Area areaGravada(String nome) {
