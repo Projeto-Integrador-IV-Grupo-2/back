@@ -16,4 +16,7 @@ public interface UsuarioRepository
     boolean existsByEmailIgnoreCase(String email);
 
     boolean existsByTenantIdAndEmailIgnoreCase(UUID tenantId, String email);
+
+    /** Usado para recusar a inativação de uma área que ainda tem usuários vinculados. */
+    boolean existsByAreaId(UUID areaId);
 }

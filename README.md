@@ -190,6 +190,36 @@ permissão.
 
 ---
 
+## Áreas (departamentos)
+
+Catálogo de áreas do tenant, usado nos selects de cadastro de usuário.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/areas` | autenticado | Lista as áreas ativas do tenant; `?incluirInativas=true` traz também as inativas |
+| `GET /api/areas/{id}` | autenticado | Detalha uma área |
+| `POST /api/areas` | `ADMIN` | Cria uma área (201 + `Location`) |
+| `PUT /api/areas/{id}` | `ADMIN` | Renomeia uma área |
+| `PATCH /api/areas/{id}/inativar` | `ADMIN` | Inativa a área |
+| `PATCH /api/areas/{id}/ativar` | `ADMIN` | Reativa a área |
+
+A leitura é liberada a qualquer usuário autenticado porque o front precisa
+montar os selects; a gestão exige `ROLE_ADMIN` e um colaborador recebe **403**.
+
+Duas regras de negócio valem a pena conhecer:
+
+- **Nome único por tenant** — nome repetido responde **409**. A checagem é feita
+  no service e a UNIQUE `uq_area_tenant_nome` garante a consistência em corrida.
+- **Área com usuários vinculados não pode ser inativada** (**409**). Inativar
+  deixaria `usuario.area_id` apontando para um departamento que o cadastro não
+  oferece mais; primeiro mova os usuários para outra área.
+
+Tudo é restrito ao tenant do usuário autenticado: uma área de outro tenant
+responde **404**, nunca 403 — assim a API não revela que aquele registro existe
+em outra empresa.
+
+---
+
 ## O que vai em cada pasta
 
 Código em [`src/main/java/com/nexo/`](src/main/java/com/nexo/). A organização

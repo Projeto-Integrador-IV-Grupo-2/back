@@ -10,5 +10,8 @@ public interface AreaRepository extends JpaRepository<Area, UUID> {
 
     List<Area> findByTenantIdAndAtivoTrueOrderByNome(UUID tenantId);
 
+    /** Inclui as inativas — é o que permite ao administrador reativar uma área. */
+    List<Area> findByTenantIdOrderByNome(UUID tenantId);
+
     Optional<Area> findByTenantIdAndNomeIgnoreCase(UUID tenantId, String nome);
 }
