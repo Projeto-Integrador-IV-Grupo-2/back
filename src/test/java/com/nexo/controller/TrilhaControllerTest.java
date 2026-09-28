@@ -101,6 +101,82 @@ class TrilhaControllerTest {
     }
 
     @Test
+    void listagemVaziaRetorna200ComPaginaSemConteudo() throws Exception {
+        Usuario usuario = criaUsuario(criaTenant());
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    @Test
+    void listagemTrazAsTrilhasAtivasDoTenant() throws Exception {
+        Usuario usuario = criaUsuario(criaTenant());
+        Trilha trilha = criaTrilha(usuario);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(trilha.getId().toString()))
+                .andExpect(jsonPath("$.content[0].nome").value(trilha.getNome()))
+                // Resumo enxuto: descrição e progresso só no detalhe.
+                .andExpect(jsonPath("$.content[0].progresso").doesNotExist())
+                .andExpect(jsonPath("$.content[0].descricao").doesNotExist());
+    }
+
+    @Test
+    void listagemOmiteTrilhaInativa() throws Exception {
+        Usuario usuario = criaUsuario(criaTenant());
+        Trilha inativa = criaTrilha(usuario);
+        inativa.setAtivo(false);
+        trilhaRepository.saveAndFlush(inativa);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    @Test
+    void listagemNaoVazaTrilhaDeOutroTenant() throws Exception {
+        Usuario usuario = criaUsuario(criaTenant());
+        Trilha deOutraEmpresa = criaTrilha(criaUsuario(criaTenant()));
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page.totalElements").value(0))
+                .andExpect(jsonPath("$.content[?(@.id == '" + deOutraEmpresa.getId() + "')]").doesNotExist());
+    }
+
+    @Test
+    void listagemPagina() throws Exception {
+        Usuario usuario = criaUsuario(criaTenant());
+        criaTrilha(usuario);
+        criaTrilha(usuario);
+        criaTrilha(usuario);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas")
+                        .param("size", "2")
+                        .param("page", "0")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.page.totalElements").value(3))
+                .andExpect(jsonPath("$.page.totalPages").value(2));
+    }
+
+    @Test
+    void listagemExigeAutenticacao() throws Exception {
+        mockMvc.perform(get("/api/trilhas"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void retorna404ParaTrilhaInexistente() throws Exception {
         Usuario usuario = criaUsuario(tenantSeed());
         String token = tokenDe(usuario);

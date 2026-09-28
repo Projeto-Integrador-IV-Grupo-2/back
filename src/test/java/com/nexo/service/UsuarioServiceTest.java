@@ -94,7 +94,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.existsByTenantIdAndEmailIgnoreCase(tenant.getId(), "maria.silva@empresa.com"))
                 .thenReturn(false);
         when(passwordEncoder.encode("SenhaForte1")).thenReturn("hash-bcrypt");
-        when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> (Usuario) invocation.getArgument(0));
+        when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UsuarioResponse response = usuarioService.criar(requestValido, ADMIN_EMAIL);
 
@@ -172,7 +172,7 @@ class UsuarioServiceTest {
     void editaNomeCargoAreaEPerfil() {
         Usuario usuario = usuarioAtivo();
         when(usuarioRepository.findById(any(UUID.class))).thenReturn(Optional.of(usuario));
-        when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> (Usuario) invocation.getArgument(0));
+        when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         AtualizarUsuarioRequest request = new AtualizarUsuarioRequest(
                 "Maria S. Souza", null, null, Perfil.ADMIN);

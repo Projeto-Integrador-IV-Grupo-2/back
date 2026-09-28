@@ -2,11 +2,14 @@ package com.nexo.service;
 
 import com.nexo.dto.trilha.ProgressoTrilhaResponse;
 import com.nexo.dto.trilha.TrilhaDetalheResponse;
+import com.nexo.dto.trilha.TrilhaResumoResponse;
 import com.nexo.entity.Trilha;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.security.UsuarioAutenticado;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +31,17 @@ public class TrilhaService {
     public TrilhaService(TrilhaRepository trilhaRepository, TrilhaAtribuicaoService trilhaAtribuicaoService) {
         this.trilhaRepository = trilhaRepository;
         this.trilhaAtribuicaoService = trilhaAtribuicaoService;
+    }
+
+    /**
+     * Trilhas ativas do tenant do requisitante (Card 05). Inativas ficam de
+     * fora: a listagem é o catálogo do que o colaborador pode fazer agora.
+     */
+    @Transactional(readOnly = true)
+    public Page<TrilhaResumoResponse> listar(Pageable pageable, UsuarioAutenticado requisitante) {
+        return trilhaRepository
+                .findByTenantIdAndAtivoTrue(requisitante.getTenantId(), pageable)
+                .map(TrilhaResumoResponse::de);
     }
 
     /**
