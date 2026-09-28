@@ -31,7 +31,7 @@ Só três coisas. Instale, abra um terminal novo e confira com o comando da
 
 | Ferramenta | Versão | Para quê serve | Conferir |
 |---|---|---|---|
-| **JDK 21** | 21 | Compilar e rodar a API | `java -version` → deve mostrar `21` |
+| **JDK 17** | 17 | Compilar e rodar a API | `java -version` → deve mostrar `17` |
 | **Docker Desktop** | atual | Subir o PostgreSQL e rodar os testes | `docker --version` |
 | **Git** | qualquer | Clonar e versionar o código | `git --version` |
 
@@ -39,14 +39,14 @@ Só três coisas. Instale, abra um terminal novo e confira com o comando da
 > `./mvnw` no Linux/macOS ou `mvnw.cmd` no Windows. Ele baixa a versão certa
 > do Maven sozinho na primeira execução.
 
-Links: [JDK 21 (Temurin)](https://adoptium.net/temurin/releases/?version=21) ·
+Links: [JDK 17 (Temurin)](https://adoptium.net/temurin/releases/?version=17) ·
 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
 ---
 
 ## Como rodar
 
-Tenha o **Docker Desktop aberto** e o **JDK 21** instalado
+Tenha o **Docker Desktop aberto** e o **JDK 17** instalado
 (ver [O que instalar](#o-que-instalar)).
 
 Abra um terminal na pasta do projeto e rode **os dois comandos, nesta ordem**:
@@ -69,7 +69,7 @@ com estes valores (definidos no [`docker-compose.yml`](docker-compose.yml)):
 | Host / porta | `localhost:5432` |
 
 Funciona igual em **Windows, macOS e Linux** — basta ter o Docker Desktop
-aberto e o JDK 21. Cada integrante roda os mesmos dois comandos, sem ajustar
+aberto e o JDK 17. Cada integrante roda os mesmos dois comandos, sem ajustar
 arquivo nenhum. (Só cria um `.env` quem quiser mudar algum desses valores;
 veja [Variáveis de ambiente](#variáveis-de-ambiente).)
 
@@ -142,6 +142,84 @@ Gera um `.jar` executável com a aplicação e todas as dependências dentro.
 
 ---
 
+## Autenticação
+
+A API é *stateless*: não há sessão nem cookie. O front faz login uma vez, guarda
+o token e o envia em toda requisição no cabeçalho
+`Authorization: Bearer <token>`.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `POST /api/auth/login` | público | Recebe `{ "email", "senha" }` e devolve o token + os dados do usuário |
+| `GET /api/auth/me` | autenticado | Devolve o usuário dono do token |
+
+Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
+`/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
+rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN`
+(role `ROLE_ADMIN`) — é o prefixo reservado para os endpoints administrativos,
+e um colaborador recebe `403` nelas.
+
+```bash
+# 1. login (administrador inicial, apenas em dev/test)
+curl -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@nexo.com","senha":"admin123"}'
+
+# 2. usar o token devolvido
+curl http://localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'
+```
+
+### Administrador inicial
+
+| Ambiente | E-mail | Senha |
+|---|---|---|
+| `dev` e `test` | `admin@nexo.com` | `admin123` |
+| demais | `admin@nexo.com` | sem senha utilizável |
+
+O usuário é criado pela migration `V5__seed_initial_admin.sql`, mas com um hash
+que não corresponde a nenhuma senha conhecida. Quem define a senha acima é
+[`db/seed/R__senha_do_admin_inicial.sql`](src/main/resources/db/seed/R__senha_do_admin_inicial.sql)
+— e essa pasta **só é carregada nos perfis `dev` e `test`**
+(`spring.flyway.locations`), de propósito: senha pública não entra em ambiente
+real. Em produção, a senha do administrador precisa ser definida fora do
+versionamento.
+
+Respostas de erro seguem o mesmo formato do resto da API: **401** quando falta
+token ou as credenciais não conferem, **403** para usuário inativo ou sem
+permissão.
+
+---
+
+## Áreas (departamentos)
+
+Catálogo de áreas do tenant, usado nos selects de cadastro de usuário.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/areas` | autenticado | Lista as áreas ativas do tenant; `?incluirInativas=true` traz também as inativas |
+| `GET /api/areas/{id}` | autenticado | Detalha uma área |
+| `POST /api/areas` | `ADMIN` | Cria uma área (201 + `Location`) |
+| `PUT /api/areas/{id}` | `ADMIN` | Renomeia uma área |
+| `PATCH /api/areas/{id}/inativar` | `ADMIN` | Inativa a área |
+| `PATCH /api/areas/{id}/ativar` | `ADMIN` | Reativa a área |
+
+A leitura é liberada a qualquer usuário autenticado porque o front precisa
+montar os selects; a gestão exige `ROLE_ADMIN` e um colaborador recebe **403**.
+
+Duas regras de negócio valem a pena conhecer:
+
+- **Nome único por tenant** — nome repetido responde **409**. A checagem é feita
+  no service e a UNIQUE `uq_area_tenant_nome` garante a consistência em corrida.
+- **Área com usuários vinculados não pode ser inativada** (**409**). Inativar
+  deixaria `usuario.area_id` apontando para um departamento que o cadastro não
+  oferece mais; primeiro mova os usuários para outra área.
+
+Tudo é restrito ao tenant do usuário autenticado: uma área de outro tenant
+responde **404**, nunca 403 — assim a API não revela que aquele registro existe
+em outra empresa.
+
+---
+
 ## O que vai em cada pasta
 
 Código em [`src/main/java/com/nexo/`](src/main/java/com/nexo/). A organização
@@ -152,14 +230,15 @@ segue o padrão MVC em camadas:
 | `config` | Configurações da aplicação: `@Configuration`, beans, CORS, leitura de *properties*. | `CorsConfig.java` |
 | `controller` | Endpoints REST. Recebe a requisição HTTP, chama o `service` e devolve a resposta. **Sem regra de negócio.** | `UserController.java` (`POST /api/users`) |
 | `dto` | Formato dos dados que **entram e saem** da API (corpo de request/response). Nunca expor a `entity` direto. | `CreateUserRequest.java`, `UserResponse.java` |
-| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UserService.java` |
-| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `interface UserRepository extends JpaRepository<User, UUID>` |
-| `entity` | Classes `@Entity` que representam as tabelas do banco. | `User.java` (tabela `users`) |
-| `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, futuro `JwtAuthFilter.java` |
+| `service` | **Regra de negócio.** Valida, decide, coordena os repositórios. É onde fica a lógica. | `UsuarioService.java`, `AuthService.java` |
+| `repository` | Interfaces de acesso ao banco (Spring Data JPA). Só a assinatura; o Spring implementa. | `UsuarioRepository`, `UsuarioSpecifications` |
+| `entity` | Classes `@Entity` que representam as tabelas do banco. | `Usuario.java` (tabela `usuario`) |
+| `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, `JwtAuthenticationFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
 
-> As pastas `entity`, `repository` e `service` estão vazias por enquanto (só com
-> um arquivo `.gitkeep` para o Git manter a pasta). Os próximos módulos preenchem.
+> Todas as pastas já têm conteúdo: o mapeamento de `tenant`, `area`, `cargo` e
+> `usuario`, o CRUD de usuários (`/api/usuarios`) e a autenticação JWT
+> (`/api/auth`).
 
 ### Como as camadas conversam
 
@@ -241,7 +320,7 @@ estável), também via PR.
 **O que ele faz:**
 
 1. Baixa o código.
-2. Instala o **JDK 21** (com cache do Maven).
+2. Instala o **JDK 17** (com cache do Maven).
 3. Roda `./mvnw verify` — compila e executa **todos os testes** (o Docker do
    runner cobre o Testcontainers).
 
@@ -257,6 +336,39 @@ do PR. O workflow **não usa segredos**.
 - Nome: `V<número>__descricao_curta.sql` — ex.: `V2__create_users_table.sql`
 - Rodam **sozinhas** no start da API e no início dos testes.
 - **Nunca edite** uma migration já aplicada — crie sempre a próxima versão.
+- `src/main/resources/db/seed/` guarda dados de conveniência (migrations
+  repetíveis `R__`) e **só roda nos perfis `dev` e `test`**.
+- O schema é propriedade do Flyway: o JPA roda com `ddl-auto: validate`, então
+  toda `@Entity` precisa bater exatamente com a tabela migrada, senão a
+  aplicação nem sobe.
+
+### O que já existe no banco
+
+| Versão | Arquivo | O que cria |
+|---|---|---|
+| V1 | `V1__init.sql` | Extensão `pgcrypto` (habilita `gen_random_uuid()`) |
+| V2 | `V2__create_tenant_and_catalogs.sql` | Tabelas `tenant`, `area` e `cargo` |
+| V3 | `V3__create_user_profiles.sql` | Enum `papel_usuario` (`ADMIN`, `GESTOR`, `COLABORADOR`) |
+| V4 | `V4__create_users.sql` | Tabela `usuario` + índices de login e de filtro |
+| V5 | `V5__seed_initial_admin.sql` | Semeia o tenant `nexo` e o admin `admin@nexo.com` (idempotente) |
+
+Regras do modelo que o código precisa respeitar:
+
+- **Multi-tenant:** `area`, `cargo` e `usuario` têm `tenant_id` obrigatório. O
+  e-mail é único **por tenant** (`uq_usuario_tenant_email`), não global — toda
+  consulta de domínio filtra por tenant.
+- **Senha:** `usuario.senha_hash` tem um CHECK que só aceita hash BCrypt (com o
+  prefixo `{bcrypt}` opcional). Senha em texto puro é recusada pelo banco.
+- **Hierarquia:** `usuario.gestor_id` é auto-referência (o gestor é outro usuário).
+- **Nomes:** tabelas e colunas em **português e no singular** (`usuario`,
+  `nome_completo`, `criado_em`).
+- `MigrationSchemaTest` valida o enum, o seed, a unicidade por tenant, o CHECK de
+  BCrypt e os índices contra um PostgreSQL real. Migration nova que mude esses
+  contratos quebra o teste.
+
+> O hash gravado pela `V5` não corresponde a nenhuma senha conhecida. Quem torna
+> o admin utilizável em `dev` e `test` é o seed repetível — ver
+> [Administrador inicial](#administrador-inicial).
 
 ---
 
