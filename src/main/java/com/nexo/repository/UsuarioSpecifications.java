@@ -1,6 +1,7 @@
 package com.nexo.repository;
 
 import com.nexo.entity.Usuario;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +30,11 @@ public final class UsuarioSpecifications {
                 }
                 if (filtro.areaId() != null) {
                     predicados.add(cb.equal(root.get("area").get("id"), filtro.areaId()));
+                }
+                if (StringUtils.hasText(filtro.departamento())) {
+                    predicados.add(cb.like(
+                            cb.lower(root.join("area", JoinType.LEFT).get("nome")),
+                            "%" + filtro.departamento().trim().toLowerCase() + "%"));
                 }
                 if (filtro.papel() != null) {
                     predicados.add(cb.equal(root.get("papel"), filtro.papel()));

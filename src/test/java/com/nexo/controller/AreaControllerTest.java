@@ -78,7 +78,7 @@ class AreaControllerTest {
     void administradorCriaAreaERecebe201ComLocation() throws Exception {
         mockMvc.perform(post("/api/areas")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico()))))
+                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null))))
                 .andExpect(status().isCreated())
                 .andExpect(header().exists("Location"))
                 .andExpect(jsonPath("$.id").isNotEmpty())
@@ -100,7 +100,7 @@ class AreaControllerTest {
     @Test
     @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
     void nomeDuplicadoNoMesmoTenantRetorna409() throws Exception {
-        String corpo = objectMapper.writeValueAsString(new AreaRequest(nomeUnico()));
+        String corpo = objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null));
 
         mockMvc.perform(post("/api/areas").contentType(MediaType.APPLICATION_JSON).content(corpo))
                 .andExpect(status().isCreated());
@@ -116,7 +116,7 @@ class AreaControllerTest {
 
         mockMvc.perform(put("/api/areas/{id}", area.getId())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new AreaRequest(novoNome))))
+                        .content(objectMapper.writeValueAsString(new AreaRequest(novoNome, null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.nome").value(novoNome));
     }
@@ -153,13 +153,46 @@ class AreaControllerTest {
         inativa.setAtivo(false);
         areaRepository.saveAndFlush(inativa);
 
-        mockMvc.perform(get("/api/areas"))
+        // Filtra pelo nome para a área ficar na primeira página, seja qual for
+        // a quantidade de áreas que outros testes deixaram no banco.
+        mockMvc.perform(get("/api/areas").param("nome", inativa.getNome()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id == '" + inativa.getId() + "')]").doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '" + inativa.getId() + "')]").doesNotExist());
 
-        mockMvc.perform(get("/api/areas").param("incluirInativas", "true"))
+        mockMvc.perform(get("/api/areas").param("nome", inativa.getNome()).param("incluirInativas", "true"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id == '" + inativa.getId() + "')]").exists());
+                .andExpect(jsonPath("$.content[?(@.id == '" + inativa.getId() + "')]").exists())
+                .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    @Test
+    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    void criaAreaComDescricaoEDevolveContadores() throws Exception {
+        mockMvc.perform(post("/api/areas")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), "  Time de produto  "))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.descricao").value("Time de produto"))
+                .andExpect(jsonPath("$.totalPessoas").value(0))
+                .andExpect(jsonPath("$.criadoEm").isNotEmpty());
+    }
+
+    @Test
+    @WithMockUser(username = "gestor.area@nexo.com", roles = "GESTOR")
+    void gestorPodeCriarArea() throws Exception {
+        criaUsuario("gestor.area@nexo.com", Perfil.GESTOR);
+
+        mockMvc.perform(post("/api/areas")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    void ordenacaoPorCampoInexistenteRetorna400() throws Exception {
+        mockMvc.perform(get("/api/areas").param("sort", "naoExiste"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -181,14 +214,14 @@ class AreaControllerTest {
 
         mockMvc.perform(get("/api/areas").param("incluirInativas", "true"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id == '" + deOutraEmpresa.getId() + "')]").doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '" + deOutraEmpresa.getId() + "')]").doesNotExist());
 
         mockMvc.perform(get("/api/areas/{id}", deOutraEmpresa.getId()))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(put("/api/areas/{id}", deOutraEmpresa.getId())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico()))))
+                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null))))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(patch("/api/areas/{id}/inativar", deOutraEmpresa.getId()))
@@ -205,7 +238,7 @@ class AreaControllerTest {
 
         mockMvc.perform(post("/api/areas")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico()))))
+                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null))))
                 .andExpect(status().isForbidden());
     }
 
@@ -217,7 +250,7 @@ class AreaControllerTest {
 
         mockMvc.perform(put("/api/areas/{id}", area.getId())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico()))))
+                        .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null))))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(patch("/api/areas/{id}/inativar", area.getId()))
@@ -273,6 +306,17 @@ class AreaControllerTest {
         usuario.setEmail(COLABORADOR_EMAIL);
         usuario.setSenhaHash(passwordEncoder.encode("senha-de-teste-123"));
         usuario.setPapel(Perfil.COLABORADOR);
+        usuario.setDataEntrada(LocalDate.now());
+        usuarioRepository.saveAndFlush(usuario);
+    }
+
+    private void criaUsuario(String email, Perfil papel) {
+        Usuario usuario = new Usuario();
+        usuario.setTenant(tenant);
+        usuario.setNomeCompleto("Usuário de Teste");
+        usuario.setEmail(email);
+        usuario.setSenhaHash(passwordEncoder.encode("senha-de-teste-123"));
+        usuario.setPapel(papel);
         usuario.setDataEntrada(LocalDate.now());
         usuarioRepository.saveAndFlush(usuario);
     }

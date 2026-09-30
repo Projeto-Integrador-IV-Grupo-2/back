@@ -16,4 +16,6 @@ public interface TrilhaRepository extends JpaRepository<Trilha, UUID> {
      * no nome do método, para o cliente poder escolher o critério.
      */
     Page<Trilha> findByTenantIdAndAtivoTrue(UUID tenantId, Pageable pageable);
+
+    boolean existsByTenantIdAndNomeIgnoreCase(UUID tenantId, String nome);
 }

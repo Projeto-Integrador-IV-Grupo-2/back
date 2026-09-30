@@ -18,7 +18,9 @@ public class CorsConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource(CorsProperties properties) {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(properties.allowedOrigins());
+        // Padrões (ex.: http://localhost:*) além de origens exatas: o Vite pula
+        // para 5174, 5175... quando a 5173 já está ocupada.
+        configuration.setAllowedOriginPatterns(properties.allowedOrigins());
         configuration.setAllowedMethods(properties.allowedMethods());
         configuration.setAllowedHeaders(properties.allowedHeaders());
         configuration.setAllowCredentials(properties.allowCredentials());

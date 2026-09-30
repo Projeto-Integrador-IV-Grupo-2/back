@@ -12,8 +12,11 @@ import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -98,6 +101,19 @@ public class TrilhaAtribuicaoService {
                 .orElseGet(() -> ProgressoTrilhaResponse.naoIniciado(trilha));
     }
 
+    /**
+     * Progresso do requisitante em todas as trilhas que ele já iniciou,
+     * indexado pelo id da trilha — uma consulta só, para a listagem não fazer
+     * uma ida ao banco por trilha. Trilha ausente do mapa = não iniciada.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, ProgressoTrilhaResponse> progressosDoRequisitante(UsuarioAutenticado requisitante) {
+        return trilhaAtribuicaoRepository
+                .findByTenantIdAndUsuarioId(requisitante.getTenantId(), requisitante.getId())
+                .stream()
+                .collect(Collectors.toMap(a -> a.getTrilha().getId(), ProgressoTrilhaResponse::de));
+    }
+
     private TrilhaAtribuicao criarProgresso(Trilha trilha, UsuarioAutenticado requisitante) {
         Usuario usuarioRef = usuarioRepository.getReferenceById(requisitante.getId());
 
@@ -109,6 +125,10 @@ public class TrilhaAtribuicaoService {
         // primeiro acesso é sempre auto-iniciado pelo próprio usuário.
         progresso.setAtribuidoPor(usuarioRef);
         progresso.setStatus(StatusAtribuicao.EM_ANDAMENTO);
+        // O prazo da trilha é relativo ("N dias"): vira data a partir do início.
+        if (trilha.getPrazoDias() != null) {
+            progresso.setPrazo(LocalDate.now().plusDays(trilha.getPrazoDias()));
+        }
         return trilhaAtribuicaoRepository.saveAndFlush(progresso);
     }
 

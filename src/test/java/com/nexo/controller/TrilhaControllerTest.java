@@ -1,7 +1,9 @@
 package com.nexo.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -122,9 +124,113 @@ class TrilhaControllerTest {
                 .andExpect(jsonPath("$.page.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].id").value(trilha.getId().toString()))
                 .andExpect(jsonPath("$.content[0].nome").value(trilha.getNome()))
-                // Resumo enxuto: descrição e progresso só no detalhe.
-                .andExpect(jsonPath("$.content[0].progresso").doesNotExist())
+                // Resumo: o cartão mostra o progresso do usuário; descrição só no detalhe.
+                .andExpect(jsonPath("$.content[0].progresso.status").value("NAO_INICIADA"))
                 .andExpect(jsonPath("$.content[0].descricao").doesNotExist());
+    }
+
+    @Test
+    void listagemTrazOProgressoDoUsuarioQuandoEleJaIniciou() throws Exception {
+        Usuario usuario = criaUsuario(criaTenant());
+        Trilha trilha = criaTrilha(usuario);
+        criaProgresso(trilha, usuario, StatusAtribuicao.CONCLUIDA);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].progresso.status").value("CONCLUIDA"))
+                .andExpect(jsonPath("$.content[0].progresso.percentual").value(100));
+    }
+
+    @Test
+    void administradorCriaTrilhaERecebe201() throws Exception {
+        Usuario admin = criaUsuario(criaTenant(), Perfil.ADMIN);
+        String token = tokenDe(admin);
+
+        mockMvc.perform(post("/api/trilhas")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nome\":\"Onboarding\",\"areaId\":null,\"prazoDias\":30,\"objetivos\":\"Conhecer a empresa\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(header().exists(HttpHeaders.LOCATION))
+                .andExpect(jsonPath("$.nome").value("Onboarding"))
+                .andExpect(jsonPath("$.objetivos").value("Conhecer a empresa"))
+                .andExpect(jsonPath("$.progresso.status").value("NAO_INICIADA"));
+
+        mockMvc.perform(post("/api/trilhas")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nome\":\"onboarding\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void colaboradorNaoPodeCriarTrilha() throws Exception {
+        String token = tokenDe(criaUsuario(tenantSeed()));
+
+        mockMvc.perform(post("/api/trilhas")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nome\":\"Qualquer\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void criarTrilhaSemNomeRetorna400() throws Exception {
+        String token = tokenDe(criaUsuario(criaTenant(), Perfil.ADMIN));
+
+        mockMvc.perform(post("/api/trilhas")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nome\":\" \",\"prazoDias\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'nome')]").exists())
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'prazoDias')]").exists());
+    }
+
+    @Test
+    void usuarioIniciaEConcluiAPropriaTrilha() throws Exception {
+        Usuario usuario = criaUsuario(tenantSeed());
+        Trilha trilha = criaTrilha(usuario);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(get("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EM_ANDAMENTO"))
+                .andExpect(jsonPath("$.id").isNotEmpty());
+
+        mockMvc.perform(patch("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CONCLUIDA\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONCLUIDA"))
+                .andExpect(jsonPath("$.percentual").value(100))
+                .andExpect(jsonPath("$.concluidoEm").isNotEmpty());
+
+        mockMvc.perform(patch("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"NAO_INICIADA\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void atualizarProgressoNaoIniciadoRetorna404() throws Exception {
+        Usuario usuario = criaUsuario(tenantSeed());
+        Trilha trilha = criaTrilha(usuario);
+        String token = tokenDe(usuario);
+
+        mockMvc.perform(patch("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CONCLUIDA\"}"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -219,12 +325,16 @@ class TrilhaControllerTest {
     }
 
     private Usuario criaUsuario(Tenant tenant) {
+        return criaUsuario(tenant, Perfil.COLABORADOR);
+    }
+
+    private Usuario criaUsuario(Tenant tenant, Perfil papel) {
         Usuario usuario = new Usuario();
         usuario.setTenant(tenant);
         usuario.setNomeCompleto("Usuário de Teste");
         usuario.setEmail("trilha-" + UUID.randomUUID() + "@nexo.com");
         usuario.setSenhaHash(passwordEncoder.encode(SENHA));
-        usuario.setPapel(Perfil.COLABORADOR);
+        usuario.setPapel(papel);
         usuario.setAtivo(true);
         return usuarioRepository.saveAndFlush(usuario);
     }

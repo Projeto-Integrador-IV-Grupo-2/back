@@ -113,7 +113,7 @@ class UsuarioRepositoryTest {
     @Test
     void consultaPaginadaComFiltroDePerfil() {
         Page<Usuario> pagina = usuarioRepository.findAll(
-                UsuarioSpecifications.comFiltro(new UsuarioFiltro(null, null, null, Perfil.ADMIN, null)),
+                UsuarioSpecifications.comFiltro(new UsuarioFiltro(null, null, null, Perfil.ADMIN, null, null)),
                 PageRequest.of(0, 20, Sort.by("email")));
 
         assertThat(pagina.getTotalElements()).isGreaterThanOrEqualTo(1);
@@ -129,7 +129,7 @@ class UsuarioRepositoryTest {
         em.clear();
 
         Page<Usuario> porNome = usuarioRepository.findAll(
-                UsuarioSpecifications.comFiltro(new UsuarioFiltro("ana", null, null, null, null)),
+                UsuarioSpecifications.comFiltro(new UsuarioFiltro("ana", null, null, null, null, null)),
                 PageRequest.of(0, 10));
         assertThat(porNome.getTotalElements()).isGreaterThanOrEqualTo(1);
         assertThat(porNome.getContent())
@@ -137,7 +137,7 @@ class UsuarioRepositoryTest {
 
         Page<Usuario> semResultado = usuarioRepository.findAll(
                 UsuarioSpecifications.comFiltro(
-                        new UsuarioFiltro(null, "ninguem@lugar.nenhum", null, null, null)),
+                        new UsuarioFiltro(null, "ninguem@lugar.nenhum", null, null, null, null)),
                 PageRequest.of(0, 10));
         assertThat(semResultado.getTotalElements()).isZero();
     }
@@ -155,7 +155,7 @@ class UsuarioRepositoryTest {
         em.clear();
 
         Page<Usuario> pagina = usuarioRepository.findAll(
-                UsuarioSpecifications.comFiltro(new UsuarioFiltro(null, null, salvo.getId(), null, null)),
+                UsuarioSpecifications.comFiltro(new UsuarioFiltro(null, null, salvo.getId(), null, null, null)),
                 PageRequest.of(0, 10));
 
         assertThat(pagina.getTotalElements()).isEqualTo(1);

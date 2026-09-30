@@ -26,6 +26,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -71,7 +75,7 @@ class AreaServiceTest {
             return salva;
         });
 
-        AreaResponse resposta = areaService.criar(new AreaRequest("  Engenharia  "), ADMIN_EMAIL);
+        AreaResponse resposta = areaService.criar(new AreaRequest("  Engenharia  ", null), ADMIN_EMAIL);
 
         assertThat(resposta.nome()).isEqualTo("Engenharia");
         assertThat(resposta.ativo()).isTrue();
@@ -82,7 +86,7 @@ class AreaServiceTest {
         when(areaRepository.findByTenantIdAndNomeIgnoreCase(tenant.getId(), "Engenharia"))
                 .thenReturn(Optional.of(areaDoTenant("Engenharia")));
 
-        assertThatThrownBy(() -> areaService.criar(new AreaRequest("Engenharia"), ADMIN_EMAIL))
+        assertThatThrownBy(() -> areaService.criar(new AreaRequest("Engenharia", null), ADMIN_EMAIL))
                 .isInstanceOf(NomeDuplicadoException.class);
 
         verify(areaRepository, never()).saveAndFlush(any(Area.class));
@@ -96,7 +100,7 @@ class AreaServiceTest {
                 .thenReturn(Optional.of(area));
         when(areaRepository.saveAndFlush(area)).thenReturn(area);
 
-        AreaResponse resposta = areaService.atualizar(area.getId(), new AreaRequest("Engenharia"), ADMIN_EMAIL);
+        AreaResponse resposta = areaService.atualizar(area.getId(), new AreaRequest("Engenharia", null), ADMIN_EMAIL);
 
         assertThat(resposta.nome()).isEqualTo("Engenharia");
     }
@@ -109,7 +113,7 @@ class AreaServiceTest {
         when(areaRepository.findByTenantIdAndNomeIgnoreCase(tenant.getId(), "Produto"))
                 .thenReturn(Optional.of(outra));
 
-        assertThatThrownBy(() -> areaService.atualizar(area.getId(), new AreaRequest("Produto"), ADMIN_EMAIL))
+        assertThatThrownBy(() -> areaService.atualizar(area.getId(), new AreaRequest("Produto", null), ADMIN_EMAIL))
                 .isInstanceOf(NomeDuplicadoException.class);
     }
 
@@ -174,25 +178,62 @@ class AreaServiceTest {
 
     @Test
     void listagemPadraoTrazSomenteAtivasDoTenant() {
-        when(areaRepository.findByTenantIdAndAtivoTrueOrderByNome(tenant.getId()))
-                .thenReturn(List.of(areaDoTenant("Engenharia")));
+        Pageable pageable = PageRequest.of(0, 20);
+        when(areaRepository.findByTenantIdAndAtivoTrueAndNomeContainingIgnoreCase(tenant.getId(), "", pageable))
+                .thenReturn(new PageImpl<>(List.of(areaDoTenant("Engenharia"))));
 
-        List<AreaResponse> areas = areaService.listar(false, ADMIN_EMAIL);
+        Page<AreaResponse> areas = areaService.listar(null, false, pageable, ADMIN_EMAIL);
 
-        assertThat(areas).extracting(AreaResponse::nome).containsExactly("Engenharia");
-        verify(areaRepository, never()).findByTenantIdOrderByNome(any());
+        assertThat(areas.getContent()).extracting(AreaResponse::nome).containsExactly("Engenharia");
+        verify(areaRepository, never()).findByTenantIdAndNomeContainingIgnoreCase(any(), any(), any());
     }
 
     @Test
     void listagemComInativasUsaConsultaCompleta() {
+        Pageable pageable = PageRequest.of(0, 20);
         Area inativa = areaDoTenant("Compras");
         inativa.setAtivo(false);
-        when(areaRepository.findByTenantIdOrderByNome(tenant.getId()))
-                .thenReturn(List.of(inativa, areaDoTenant("Engenharia")));
+        when(areaRepository.findByTenantIdAndNomeContainingIgnoreCase(tenant.getId(), "", pageable))
+                .thenReturn(new PageImpl<>(List.of(inativa, areaDoTenant("Engenharia"))));
 
-        List<AreaResponse> areas = areaService.listar(true, ADMIN_EMAIL);
+        Page<AreaResponse> areas = areaService.listar(null, true, pageable, ADMIN_EMAIL);
 
-        assertThat(areas).extracting(AreaResponse::nome).containsExactly("Compras", "Engenharia");
+        assertThat(areas.getContent()).extracting(AreaResponse::nome).containsExactly("Compras", "Engenharia");
+    }
+
+    @Test
+    void listagemFiltraPorNomeSemEspacosEPreencheTotalDePessoas() {
+        Pageable pageable = PageRequest.of(0, 20);
+        Area engenharia = areaDoTenant("Engenharia");
+        when(areaRepository.findByTenantIdAndAtivoTrueAndNomeContainingIgnoreCase(tenant.getId(), "eng", pageable))
+                .thenReturn(new PageImpl<>(List.of(engenharia)));
+        UsuarioRepository.TotalPorArea total = new UsuarioRepository.TotalPorArea() {
+            @Override
+            public UUID getAreaId() {
+                return engenharia.getId();
+            }
+
+            @Override
+            public long getTotal() {
+                return 3L;
+            }
+        };
+        when(usuarioRepository.contarPorArea(List.of(engenharia.getId()))).thenReturn(List.of(total));
+
+        Page<AreaResponse> areas = areaService.listar("  eng ", false, pageable, ADMIN_EMAIL);
+
+        assertThat(areas.getContent()).singleElement()
+                .extracting(AreaResponse::totalPessoas).isEqualTo(3L);
+    }
+
+    @Test
+    void descricaoEmBrancoEhGravadaComoNula() {
+        when(areaRepository.findByTenantIdAndNomeIgnoreCase(tenant.getId(), "Engenharia")).thenReturn(Optional.empty());
+        when(areaRepository.saveAndFlush(any(Area.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AreaResponse resposta = areaService.criar(new AreaRequest("Engenharia", "   "), ADMIN_EMAIL);
+
+        assertThat(resposta.descricao()).isNull();
     }
 
     private Area areaDoTenant(String nome) {

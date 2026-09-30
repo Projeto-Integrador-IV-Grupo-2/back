@@ -1,6 +1,7 @@
 package com.nexo.dto.area;
 
 import com.nexo.entity.Area;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -8,13 +9,35 @@ import java.util.UUID;
  * uma requisição, já que toda operação é restrita ao tenant do usuário
  * autenticado.
  *
- * @param id    identificador da área
- * @param nome  nome exibido
- * @param ativo situação da área (inativa não deve ser oferecida em novos cadastros)
+ * @param id             identificador da área
+ * @param nome           nome exibido
+ * @param descricao      texto livre (pode ser nulo)
+ * @param ativo          situação da área (inativa não deve ser oferecida em novos cadastros)
+ * @param totalPessoas   usuários vinculados à área ({@code usuario.area_id})
+ * @param totalConteudos conteúdos vinculados à área — sempre 0 enquanto a tabela
+ *                       {@code conteudo} (outro card) não existir
+ * @param criadoEm       auditoria
+ * @param atualizadoEm   auditoria
  */
-public record AreaResponse(UUID id, String nome, boolean ativo) {
+public record AreaResponse(
+        UUID id,
+        String nome,
+        String descricao,
+        boolean ativo,
+        long totalPessoas,
+        long totalConteudos,
+        OffsetDateTime criadoEm,
+        OffsetDateTime atualizadoEm) {
 
-    public static AreaResponse from(Area area) {
-        return new AreaResponse(area.getId(), area.getNome(), area.isAtivo());
+    public static AreaResponse from(Area area, long totalPessoas) {
+        return new AreaResponse(
+                area.getId(),
+                area.getNome(),
+                area.getDescricao(),
+                area.isAtivo(),
+                totalPessoas,
+                0L,
+                area.getCriadoEm(),
+                area.getAtualizadoEm());
     }
 }

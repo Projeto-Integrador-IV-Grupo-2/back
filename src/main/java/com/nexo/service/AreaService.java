@@ -11,8 +11,12 @@ import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
 import com.nexo.repository.UsuarioRepository;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,22 +49,38 @@ public class AreaService {
         Area area = new Area();
         area.setTenant(tenant);
         area.setNome(nome);
+        area.setDescricao(textoOuNulo(request.descricao()));
         area.setAtivo(true);
-        return AreaResponse.from(gravar(area, nome));
+        return AreaResponse.from(gravar(area, nome), 0L);
     }
 
+    /**
+     * Página de áreas do tenant, opcionalmente filtrada por trecho do nome.
+     * As contagens de pessoas vêm numa única consulta agrupada para a página
+     * inteira, em vez de uma por área.
+     */
     @Transactional(readOnly = true)
-    public List<AreaResponse> listar(boolean incluirInativas, String requisitanteEmail) {
+    public Page<AreaResponse> listar(String nome, boolean incluirInativas, Pageable pageable,
+                                     String requisitanteEmail) {
         UUID tenantId = tenantDoRequisitante(requisitanteEmail).getId();
-        List<Area> areas = incluirInativas
-                ? areaRepository.findByTenantIdOrderByNome(tenantId)
-                : areaRepository.findByTenantIdAndAtivoTrueOrderByNome(tenantId);
-        return areas.stream().map(AreaResponse::from).toList();
+        String trecho = nome == null ? "" : nome.trim();
+        Page<Area> areas = incluirInativas
+                ? areaRepository.findByTenantIdAndNomeContainingIgnoreCase(tenantId, trecho, pageable)
+                : areaRepository.findByTenantIdAndAtivoTrueAndNomeContainingIgnoreCase(tenantId, trecho, pageable);
+
+        List<UUID> ids = areas.getContent().stream().map(Area::getId).toList();
+        Map<UUID, Long> totais = ids.isEmpty()
+                ? Map.of()
+                : usuarioRepository.contarPorArea(ids).stream()
+                        .collect(Collectors.toMap(
+                                UsuarioRepository.TotalPorArea::getAreaId,
+                                UsuarioRepository.TotalPorArea::getTotal));
+        return areas.map(area -> AreaResponse.from(area, totais.getOrDefault(area.getId(), 0L)));
     }
 
     @Transactional(readOnly = true)
     public AreaResponse buscarPorId(UUID id, String requisitanteEmail) {
-        return AreaResponse.from(buscarEntidadeNoTenant(id, requisitanteEmail));
+        return comTotal(buscarEntidadeNoTenant(id, requisitanteEmail));
     }
 
     @Transactional
@@ -70,7 +90,8 @@ public class AreaService {
         exigirNomeDisponivel(area.getTenant().getId(), nome, area.getId());
 
         area.setNome(nome);
-        return AreaResponse.from(gravar(area, nome));
+        area.setDescricao(textoOuNulo(request.descricao()));
+        return comTotal(gravar(area, nome));
     }
 
     /**
@@ -88,14 +109,22 @@ public class AreaService {
         }
 
         area.setAtivo(false);
-        return AreaResponse.from(areaRepository.saveAndFlush(area));
+        return AreaResponse.from(areaRepository.saveAndFlush(area), 0L);
     }
 
     @Transactional
     public AreaResponse ativar(UUID id, String requisitanteEmail) {
         Area area = buscarEntidadeNoTenant(id, requisitanteEmail);
         area.setAtivo(true);
-        return AreaResponse.from(areaRepository.saveAndFlush(area));
+        return comTotal(areaRepository.saveAndFlush(area));
+    }
+
+    private AreaResponse comTotal(Area area) {
+        return AreaResponse.from(area, usuarioRepository.countByAreaId(area.getId()));
+    }
+
+    private static String textoOuNulo(String valor) {
+        return valor == null || valor.isBlank() ? null : valor.trim();
     }
 
     /**
