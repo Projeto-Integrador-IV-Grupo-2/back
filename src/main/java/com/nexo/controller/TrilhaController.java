@@ -1,6 +1,9 @@
 package com.nexo.controller;
 
 import com.nexo.dto.trilha.TrilhaDetalheResponse;
+import com.nexo.security.UsuarioAutenticado;
+import com.nexo.service.TrilhaService;
+import java.util.UUID;
 import com.nexo.dto.trilha.TrilhaResumoResponse;
 import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.TrilhaService;

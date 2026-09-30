@@ -173,6 +173,32 @@ class UsuarioRepositoryTest {
         assertThat(pagina.getContent()).hasSize(1);
     }
 
+    @Test
+    void existsByAreaIdRetornaFalsoQuandoNenhumUsuarioEstaVinculado() {
+        Area area = new Area();
+        area.setTenant(tenant);
+        area.setNome("Área sem vínculo-" + UUID.randomUUID());
+        Area salva = areaRepository.saveAndFlush(area);
+
+        assertThat(usuarioRepository.existsByAreaId(salva.getId())).isFalse();
+    }
+
+    @Test
+    void existsByAreaIdRetornaVerdadeiroQuandoHaUsuarioVinculado() {
+        Area area = new Area();
+        area.setTenant(tenant);
+        area.setNome("Área com vínculo-" + UUID.randomUUID());
+        Area salva = areaRepository.saveAndFlush(area);
+
+        Usuario vinculado = novoUsuario(
+                "vinculado.area." + UUID.randomUUID() + "@nexo.com", Perfil.COLABORADOR, SituacaoUsuario.ATIVO);
+        vinculado.setArea(salva);
+        usuarioRepository.saveAndFlush(vinculado);
+        em.clear();
+
+        assertThat(usuarioRepository.existsByAreaId(salva.getId())).isTrue();
+    }
+
     private Usuario novoUsuario(String email, Perfil papel, SituacaoUsuario situacao) {
         Usuario u = new Usuario();
         u.setTenant(tenant);
