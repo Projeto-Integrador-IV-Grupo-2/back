@@ -220,6 +220,59 @@ em outra empresa.
 
 ---
 
+## Trilhas
+
+Catálogo de trilhas de aprendizagem e o progresso de cada colaborador nelas.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/trilhas` | autenticado | Lista as trilhas ativas do tenant, com o progresso de quem chamou |
+| `GET /api/trilhas/{id}` | autenticado | Detalha a trilha + o progresso de quem chamou |
+| `GET /api/trilhas/{id}/progresso` | autenticado | Progresso próprio (404 se nunca iniciou) |
+| `POST /api/trilhas/{id}/progresso` | autenticado | Inicia a trilha para si (idempotente) |
+| `PATCH /api/trilhas/{id}/progresso` | autenticado | Muda o status do próprio progresso |
+| `POST /api/trilhas` | `ADMIN` | Cria uma trilha |
+| `PUT /api/trilhas/{id}` | `ADMIN` | Edita a trilha |
+| `PATCH /api/trilhas/{id}/inativar` | `ADMIN` | Tira do catálogo |
+| `PATCH /api/trilhas/{id}/ativar` | `ADMIN` | Devolve ao catálogo |
+| `POST /api/trilhas/{id}/atribuicoes` | `ADMIN`, `GESTOR` | Atribui a colaboradores ou a uma área |
+
+Consulta e progresso são abertos a qualquer autenticado de propósito: quem
+impede ver trilha de outra empresa é o filtro por tenant no service, e o dono
+do progresso é sempre o usuário do token. Gerir o catálogo é do `ADMIN`;
+**atribuir** é também do `GESTOR`, porque distribuir trilha para a equipe é
+função dele.
+
+### Atribuição
+
+O corpo leva **ou** `usuarioIds` **ou** `areaId` — nunca os dois (400 se vierem
+juntos ou nenhum) — mais um `prazo` opcional. Sem prazo informado, vale o
+`prazoDias` da trilha contado a partir de hoje.
+
+Atribuir é idempotente por pessoa: quem já tem a trilha é contado em
+`ignorados` e **mantém o progresso que já fez**. A resposta traz
+`{ atribuidos, ignorados, usuarioIds }`.
+
+### Trilha atrasada
+
+Uma atribuição está atrasada quando o prazo venceu e ela não foi concluída.
+Quem decide isso é um bean único, `RegraDePrazo`, usado pelos dois caminhos:
+
+- a **rotina diária** (`RotinaDeAtraso`, 3h da manhã) persiste o status `ATRASADA`;
+- a **leitura** aplica a mesma regra na resposta, então um prazo vencido já
+  aparece como atrasado **sem esperar a rotina**.
+
+Trilha concluída nunca fica atrasada, e concluir uma trilha atrasada continua
+permitido (vira `CONCLUIDA`).
+
+> **Nome único:** a regra "nome único por tenant" vale no service, não no
+> banco — o DER não define UNIQUE em `trilha.nome` (diferente de `area` e
+> `cargo`). Duas requisições simultâneas com o mesmo nome não são barradas pelo
+> banco; se isso virar problema, é uma migration de uma linha **e** uma
+> atualização do DER.
+
+---
+
 ## O que vai em cada pasta
 
 Código em [`src/main/java/com/nexo/`](src/main/java/com/nexo/). A organização
@@ -235,6 +288,7 @@ segue o padrão MVC em camadas:
 | `entity` | Classes `@Entity` que representam as tabelas do banco. | `Usuario.java` (tabela `usuario`) |
 | `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, `JwtAuthenticationFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
+| `event` | Eventos de domínio publicados via `ApplicationEventPublisher`. Desacoplam "aconteceu X" de "reaja a X". | `TrilhaAtribuidaEvent.java` |
 
 > Todas as pastas já têm conteúdo: o mapeamento de `tenant`, `area`, `cargo` e
 > `usuario`, o CRUD de usuários (`/api/usuarios`) e a autenticação JWT

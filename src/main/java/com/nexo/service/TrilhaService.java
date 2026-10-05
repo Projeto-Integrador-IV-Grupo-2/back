@@ -1,5 +1,6 @@
 package com.nexo.service;
 
+import com.nexo.dto.trilha.AtualizarTrilhaRequest;
 import com.nexo.dto.trilha.CriarTrilhaRequest;
 import com.nexo.dto.trilha.ProgressoTrilhaResponse;
 import com.nexo.dto.trilha.TrilhaDetalheResponse;
@@ -7,6 +8,7 @@ import com.nexo.dto.trilha.TrilhaResumoResponse;
 import com.nexo.entity.Area;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.Usuario;
+import com.nexo.event.TrilhaInativadaEvent;
 import com.nexo.exception.NomeDuplicadoException;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
@@ -16,6 +18,7 @@ import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -37,15 +40,18 @@ public class TrilhaService {
     private final TrilhaAtribuicaoService trilhaAtribuicaoService;
     private final AreaRepository areaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final ApplicationEventPublisher publisher;
 
     public TrilhaService(TrilhaRepository trilhaRepository,
                          TrilhaAtribuicaoService trilhaAtribuicaoService,
                          AreaRepository areaRepository,
-                         UsuarioRepository usuarioRepository) {
+                         UsuarioRepository usuarioRepository,
+                         ApplicationEventPublisher publisher) {
         this.trilhaRepository = trilhaRepository;
         this.trilhaAtribuicaoService = trilhaAtribuicaoService;
         this.areaRepository = areaRepository;
         this.usuarioRepository = usuarioRepository;
+        this.publisher = publisher;
     }
 
     /**
@@ -100,6 +106,52 @@ public class TrilhaService {
         trilha.setObjetivos(textoOuNulo(request.objetivos()));
         trilha.setDescricao(textoOuNulo(request.descricao()));
         trilha.setCriadoPor(autor);
+        trilha.setAtivo(true);
+        return TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
+    }
+
+    /**
+     * Edita a trilha. O nome continua único por tenant — a comparação ignora a
+     * própria trilha, senão salvar sem renomear acusaria duplicidade. As
+     * atribuições e o progresso de quem já faz a trilha não são tocados.
+     */
+    @Transactional
+    public TrilhaResumoResponse atualizar(UUID trilhaId, AtualizarTrilhaRequest request,
+                                           UsuarioAutenticado requisitante) {
+        Trilha trilha = buscarEntidadeNoTenant(trilhaId, requisitante.getTenantId());
+        String nome = request.nome().trim();
+        trilhaRepository.findByTenantIdAndNomeIgnoreCase(requisitante.getTenantId(), nome)
+                .filter(existente -> !existente.getId().equals(trilha.getId()))
+                .ifPresent(existente -> {
+                    throw new NomeDuplicadoException("uma trilha", nome);
+                });
+
+        trilha.setNome(nome);
+        trilha.setArea(resolverArea(request.areaId(), requisitante.getTenantId()));
+        trilha.setPrazoDias(request.prazoDias());
+        trilha.setObjetivos(textoOuNulo(request.objetivos()));
+        trilha.setDescricao(textoOuNulo(request.descricao()));
+        return TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
+    }
+
+    /**
+     * Tira a trilha do catálogo (soft delete via {@code ativo}). O progresso de
+     * quem já a estava fazendo é preservado: inativar esconde a trilha das
+     * novas listagens, não apaga histórico.
+     */
+    @Transactional
+    public TrilhaResumoResponse inativar(UUID trilhaId, UsuarioAutenticado requisitante) {
+        Trilha trilha = buscarEntidadeNoTenant(trilhaId, requisitante.getTenantId());
+        trilha.setAtivo(false);
+        TrilhaResumoResponse resposta = TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
+        publisher.publishEvent(new TrilhaInativadaEvent(
+                trilha.getId(), trilha.getTenant().getId(), requisitante.getId()));
+        return resposta;
+    }
+
+    @Transactional
+    public TrilhaResumoResponse ativar(UUID trilhaId, UsuarioAutenticado requisitante) {
+        Trilha trilha = buscarEntidadeNoTenant(trilhaId, requisitante.getTenantId());
         trilha.setAtivo(true);
         return TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
     }

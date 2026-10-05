@@ -26,6 +26,9 @@ public interface UsuarioRepository
 
     long countByAreaId(UUID areaId);
 
+    /** Destinatários de uma atribuição de trilha por área: só os ativos. */
+    List<Usuario> findByTenantIdAndAreaIdAndAtivoTrue(UUID tenantId, UUID areaId);
+
     /**
      * Quantos usuários cada área tem, numa consulta só (evita N+1 na listagem).
      * Área sem usuário não aparece no resultado.

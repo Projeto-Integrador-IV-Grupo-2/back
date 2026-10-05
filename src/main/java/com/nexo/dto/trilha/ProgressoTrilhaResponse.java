@@ -29,12 +29,19 @@ public record ProgressoTrilhaResponse(
     public record Recurso(UUID id, String nome) {
     }
 
-    public static ProgressoTrilhaResponse de(TrilhaAtribuicao progresso) {
+    /**
+     * Monta a resposta com o <strong>status efetivo</strong>, calculado por
+     * {@code RegraDePrazo} — não necessariamente o gravado. É o que faz uma
+     * atribuição vencida aparecer como {@code ATRASADA} mesmo antes de a rotina
+     * diária rodar. Receber o status pronto (em vez de consultar a regra aqui)
+     * mantém o DTO sem dependência de bean.
+     */
+    public static ProgressoTrilhaResponse de(TrilhaAtribuicao progresso, StatusAtribuicao statusEfetivo) {
         return new ProgressoTrilhaResponse(
                 progresso.getId(),
                 recursoDe(progresso.getTrilha()),
-                progresso.getStatus(),
-                percentualDe(progresso.getStatus()),
+                statusEfetivo,
+                percentualDe(statusEfetivo),
                 progresso.getPrazo(),
                 progresso.getAtribuidoEm(),
                 progresso.getConcluidoEm());
