@@ -5,6 +5,7 @@ import com.nexo.dto.trilha.CriarTrilhaRequest;
 import com.nexo.dto.trilha.ProgressoTrilhaResponse;
 import com.nexo.dto.trilha.TrilhaDetalheResponse;
 import com.nexo.dto.trilha.TrilhaResumoResponse;
+import com.nexo.repository.TrilhaFiltro;
 import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.TrilhaAtribuicaoService;
 import com.nexo.service.TrilhaService;
@@ -18,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -52,12 +54,18 @@ public class TrilhaController {
         this.trilhaAtribuicaoService = trilhaAtribuicaoService;
     }
 
-    /** Trilhas ativas do tenant do usuário autenticado, com o progresso dele em cada uma. */
+    /**
+     * Trilhas ativas do tenant do usuário autenticado, com o progresso dele em
+     * cada uma. Filtros opcionais: {@code nome}, {@code areaId}, {@code status}
+     * (do progresso do usuário), {@code minhas=true} (aceita {@code sort=prazo})
+     * e {@code recomendar=AREA}.
+     */
     @GetMapping
     public PagedModel<TrilhaResumoResponse> listar(
+            @ModelAttribute TrilhaFiltro filtro,
             @PageableDefault(size = 20, sort = "nome") Pageable pageable,
             @AuthenticationPrincipal UsuarioAutenticado usuario) {
-        return new PagedModel<>(trilhaService.listar(pageable, usuario));
+        return new PagedModel<>(trilhaService.listar(filtro, pageable, usuario));
     }
 
     @PostMapping

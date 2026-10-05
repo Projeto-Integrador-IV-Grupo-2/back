@@ -133,6 +133,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, "Recurso não encontrado", request);
     }
 
+    @ExceptionHandler(ParametroInvalidoException.class)
+    public ResponseEntity<ApiError> handleParametroInvalido(ParametroInvalidoException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
     /** Ex.: {@code DELETE} numa rota que só aceita {@code GET}. Sem isto viraria 500. */
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiError> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
