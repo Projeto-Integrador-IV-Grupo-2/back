@@ -15,6 +15,7 @@ import com.nexo.entity.Tenant;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
+import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
@@ -26,9 +27,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -46,6 +49,9 @@ class TrilhaAtribuicaoServiceTest {
 
     @Mock
     private UsuarioRepository usuarioRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventos;
 
     @InjectMocks
     private TrilhaAtribuicaoService trilhaAtribuicaoService;
@@ -99,6 +105,22 @@ class TrilhaAtribuicaoServiceTest {
         verify(usuarioRepository, never()).getReferenceById(any());
     }
 
+    /** Trilha atribuída pelo gestor (ação do PDI): iniciar promove o registro, não cria outro. */
+    @Test
+    void iniciarPromoveAtribuicaoNaoIniciadaParaEmAndamento() {
+        TrilhaAtribuicao atribuida = progressoExistente(StatusAtribuicao.NAO_INICIADA);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(atribuida));
+        when(trilhaAtribuicaoRepository.saveAndFlush(atribuida)).thenReturn(atribuida);
+
+        ProgressoTrilhaResponse response = trilhaAtribuicaoService.iniciar(trilhaId, requisitante);
+
+        assertThat(response.id()).isEqualTo(atribuida.getId());
+        assertThat(response.status()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
+        verify(usuarioRepository, never()).getReferenceById(any());
+    }
+
     @Test
     void iniciarComTrilhaInexistenteLancaResourceNotFound() {
         when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.empty());
@@ -130,6 +152,7 @@ class TrilhaAtribuicaoServiceTest {
 
         assertThat(response.status()).isEqualTo(StatusAtribuicao.ATRASADA);
         assertThat(response.concluidoEm()).isNull();
+        verify(eventos, never()).publishEvent(any(Object.class));
     }
 
     @Test
@@ -187,6 +210,25 @@ class TrilhaAtribuicaoServiceTest {
         assertThat(response.status()).isEqualTo(StatusAtribuicao.CONCLUIDA);
         assertThat(response.percentual()).isEqualTo(100);
         assertThat(response.concluidoEm()).isNotNull();
+    }
+
+    @Test
+    void concluirPublicaTrilhaConcluidaEvent() {
+        TrilhaAtribuicao existente = progressoExistente(StatusAtribuicao.EM_ANDAMENTO);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(existente));
+        when(trilhaAtribuicaoRepository.saveAndFlush(any(TrilhaAtribuicao.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        trilhaAtribuicaoService.concluir(trilhaId, requisitante);
+
+        ArgumentCaptor<TrilhaConcluidaEvent> evento = ArgumentCaptor.forClass(TrilhaConcluidaEvent.class);
+        verify(eventos).publishEvent(evento.capture());
+        assertThat(evento.getValue().tenantId()).isEqualTo(tenant.getId());
+        assertThat(evento.getValue().trilhaId()).isEqualTo(trilhaId);
+        assertThat(evento.getValue().usuarioId()).isEqualTo(requisitante.getId());
+        assertThat(evento.getValue().concluidoEm()).isEqualTo(existente.getConcluidoEm());
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.nexo.entity.StatusAtribuicao;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
+import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
@@ -17,6 +18,7 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,23 +44,31 @@ public class TrilhaAtribuicaoService {
     private final TrilhaAtribuicaoRepository trilhaAtribuicaoRepository;
     private final TrilhaRepository trilhaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final ApplicationEventPublisher eventos;
 
     public TrilhaAtribuicaoService(TrilhaAtribuicaoRepository trilhaAtribuicaoRepository,
                                     TrilhaRepository trilhaRepository,
-                                    UsuarioRepository usuarioRepository) {
+                                    UsuarioRepository usuarioRepository,
+                                    ApplicationEventPublisher eventos) {
         this.trilhaAtribuicaoRepository = trilhaAtribuicaoRepository;
         this.trilhaRepository = trilhaRepository;
         this.usuarioRepository = usuarioRepository;
+        this.eventos = eventos;
     }
 
     /**
      * Retorna o progresso do requisitante na trilha, criando-o (status
      * {@code EM_ANDAMENTO}) se esta for a primeira interação dele com ela.
+     *
+     * <p>Uma trilha atribuída por outra pessoa (ex.: pelo gestor, via ação do
+     * PDI) já tem registro em {@code NAO_INICIADA}: iniciar a promove para
+     * {@code EM_ANDAMENTO}, mantendo o prazo e quem atribuiu.</p>
      */
     @Transactional
     public ProgressoTrilhaResponse iniciar(UUID trilhaId, UsuarioAutenticado requisitante) {
         Trilha trilha = buscarTrilhaNoTenant(trilhaId, requisitante.getTenantId());
         return trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId())
+                .map(this::comecarSeNaoIniciada)
                 .map(ProgressoTrilhaResponse::de)
                 .orElseGet(() -> ProgressoTrilhaResponse.de(criarProgresso(trilha, requisitante)));
     }
@@ -69,7 +79,7 @@ public class TrilhaAtribuicaoService {
                                               UsuarioAutenticado requisitante) {
         TrilhaAtribuicao progresso = buscarProgressoDoRequisitante(trilhaId, requisitante);
         aplicarStatus(progresso, request.status());
-        return ProgressoTrilhaResponse.de(trilhaAtribuicaoRepository.saveAndFlush(progresso));
+        return ProgressoTrilhaResponse.de(gravar(progresso));
     }
 
     /** Marca o progresso do requisitante na trilha como concluído agora. */
@@ -77,7 +87,7 @@ public class TrilhaAtribuicaoService {
     public ProgressoTrilhaResponse concluir(UUID trilhaId, UsuarioAutenticado requisitante) {
         TrilhaAtribuicao progresso = buscarProgressoDoRequisitante(trilhaId, requisitante);
         aplicarStatus(progresso, StatusAtribuicao.CONCLUIDA);
-        return ProgressoTrilhaResponse.de(trilhaAtribuicaoRepository.saveAndFlush(progresso));
+        return ProgressoTrilhaResponse.de(gravar(progresso));
     }
 
     /** Busca o progresso do requisitante na trilha. Nunca cria — use {@link #iniciar} para isso. */
@@ -112,6 +122,30 @@ public class TrilhaAtribuicaoService {
                 .findByTenantIdAndUsuarioId(requisitante.getTenantId(), requisitante.getId())
                 .stream()
                 .collect(Collectors.toMap(a -> a.getTrilha().getId(), ProgressoTrilhaResponse::de));
+    }
+
+    private TrilhaAtribuicao comecarSeNaoIniciada(TrilhaAtribuicao progresso) {
+        if (progresso.getStatus() != StatusAtribuicao.NAO_INICIADA) {
+            return progresso;
+        }
+        progresso.setStatus(StatusAtribuicao.EM_ANDAMENTO);
+        return trilhaAtribuicaoRepository.saveAndFlush(progresso);
+    }
+
+    /**
+     * Grava e, se a trilha ficou concluída, avisa quem se interessa
+     * ({@link TrilhaConcluidaEvent} — ex.: o PDI conclui a ação ligada a ela).
+     */
+    private TrilhaAtribuicao gravar(TrilhaAtribuicao progresso) {
+        TrilhaAtribuicao gravado = trilhaAtribuicaoRepository.saveAndFlush(progresso);
+        if (gravado.getStatus() == StatusAtribuicao.CONCLUIDA) {
+            eventos.publishEvent(new TrilhaConcluidaEvent(
+                    gravado.getTenant().getId(),
+                    gravado.getTrilha().getId(),
+                    gravado.getUsuario().getId(),
+                    gravado.getConcluidoEm()));
+        }
+        return gravado;
     }
 
     private TrilhaAtribuicao criarProgresso(Trilha trilha, UsuarioAutenticado requisitante) {
@@ -150,8 +184,9 @@ public class TrilhaAtribuicaoService {
     }
 
     /**
-     * {@code NAO_INICIADA} só existe implicitamente (ausência de registro): uma
-     * vez criado o progresso, não faz sentido negociá-lo de volta a esse estado.
+     * {@code NAO_INICIADA} é o estado antes de o colaborador começar (ausência
+     * de registro, ou trilha atribuída pelo gestor): uma vez iniciado o
+     * progresso, não faz sentido negociá-lo de volta a esse estado.
      */
     private void aplicarStatus(TrilhaAtribuicao progresso, StatusAtribuicao novoStatus) {
         if (novoStatus == StatusAtribuicao.NAO_INICIADA) {
