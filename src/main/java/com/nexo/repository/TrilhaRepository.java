@@ -7,8 +7,9 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-public interface TrilhaRepository extends JpaRepository<Trilha, UUID> {
+public interface TrilhaRepository extends JpaRepository<Trilha, UUID>, JpaSpecificationExecutor<Trilha> {
 
     List<Trilha> findByTenantIdAndAtivoTrueOrderByNome(UUID tenantId);
 

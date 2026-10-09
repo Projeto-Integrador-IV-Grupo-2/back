@@ -43,7 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
  * </ul>
  *
  * <p>O status gravado pode estar desatualizado em relação ao prazo até a rotina
- * diária rodar; por isso toda leitura passa por {@link RegraDePrazo}, nunca pelo
+ * diária rodar; por isso toda leitura passa por {@link RegraDeAtraso}, nunca pelo
  * {@code getStatus()} cru.</p>
  */
 @Service
@@ -52,18 +52,18 @@ public class TrilhaAtribuicaoService {
     private final TrilhaAtribuicaoRepository trilhaAtribuicaoRepository;
     private final TrilhaRepository trilhaRepository;
     private final UsuarioRepository usuarioRepository;
-    private final RegraDePrazo regraDePrazo;
+    private final RegraDeAtraso regraDeAtraso;
     private final ApplicationEventPublisher publisher;
 
     public TrilhaAtribuicaoService(TrilhaAtribuicaoRepository trilhaAtribuicaoRepository,
                                     TrilhaRepository trilhaRepository,
                                     UsuarioRepository usuarioRepository,
-                                    RegraDePrazo regraDePrazo,
+                                    RegraDeAtraso regraDeAtraso,
                                     ApplicationEventPublisher publisher) {
         this.trilhaAtribuicaoRepository = trilhaAtribuicaoRepository;
         this.trilhaRepository = trilhaRepository;
         this.usuarioRepository = usuarioRepository;
-        this.regraDePrazo = regraDePrazo;
+        this.regraDeAtraso = regraDeAtraso;
         this.publisher = publisher;
     }
 
@@ -117,7 +117,7 @@ public class TrilhaAtribuicaoService {
     public int marcarAtrasadas() {
         List<TrilhaAtribuicao> vencidas = trilhaAtribuicaoRepository
                 .findByPrazoBeforeAndStatusNotIn(
-                        regraDePrazo.hoje(),
+                        regraDeAtraso.hoje(),
                         List.of(StatusAtribuicao.CONCLUIDA, StatusAtribuicao.ATRASADA));
 
         vencidas.forEach(atribuicao -> {
@@ -200,7 +200,8 @@ public class TrilhaAtribuicaoService {
 
     /** Toda resposta sai daqui, para nenhuma leitura escapar da regra de prazo. */
     private ProgressoTrilhaResponse responder(TrilhaAtribuicao progresso) {
-        return ProgressoTrilhaResponse.de(progresso, regraDePrazo.statusEfetivo(progresso));
+        return ProgressoTrilhaResponse.de(progresso)
+                .comStatus(regraDeAtraso.statusEfetivo(progresso.getStatus(), progresso.getPrazo()));
     }
 
     private List<Usuario> resolverDestinatarios(AtribuirTrilhaRequest request, UUID tenantId) {
@@ -230,7 +231,7 @@ public class TrilhaAtribuicaoService {
         if (prazoPedido != null) {
             return prazoPedido;
         }
-        return trilha.getPrazoDias() == null ? null : regraDePrazo.hoje().plusDays(trilha.getPrazoDias());
+        return trilha.getPrazoDias() == null ? null : regraDeAtraso.hoje().plusDays(trilha.getPrazoDias());
     }
 
     private TrilhaAtribuicao criarProgresso(Trilha trilha, UsuarioAutenticado requisitante) {

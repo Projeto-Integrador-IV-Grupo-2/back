@@ -69,18 +69,18 @@ class TrilhaAtribuicaoServiceTest {
     private UUID trilhaId;
 
     /**
-     * A regra de prazo entra de verdade (com o relógio fixo), e não mockada:
+     * A regra de atraso entra de verdade (com o relógio fixo), e não mockada:
      * ela é quem decide o status que sai nas respostas, então mocká-la
      * esvaziaria as asserções de status destes testes.
      */
-    private final RegraDePrazo regraDePrazo = new RegraDePrazo(
+    private final RegraDeAtraso regraDeAtraso = new RegraDeAtraso(
             Clock.fixed(ZonedDateTime.of(HOJE.atStartOfDay(), ZoneId.systemDefault()).toInstant(),
                     ZoneId.systemDefault()));
 
     @BeforeEach
     void setUp() {
         trilhaAtribuicaoService = new TrilhaAtribuicaoService(
-                trilhaAtribuicaoRepository, trilhaRepository, usuarioRepository, regraDePrazo, publisher);
+                trilhaAtribuicaoRepository, trilhaRepository, usuarioRepository, regraDeAtraso, publisher);
         tenant = tenantComId();
         requisitante = new UsuarioAutenticado(
                 UUID.randomUUID(), tenant.getId(), "Maria Silva", "maria.silva@empresa.com",

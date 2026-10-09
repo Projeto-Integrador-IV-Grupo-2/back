@@ -196,15 +196,17 @@ Catálogo de áreas do tenant, usado nos selects de cadastro de usuário.
 
 | Endpoint | Acesso | O que faz |
 |---|---|---|
-| `GET /api/areas` | autenticado | Lista as áreas ativas do tenant; `?incluirInativas=true` traz também as inativas |
+| `GET /api/areas` | autenticado | Lista paginada das áreas ativas do tenant; `?nome=` filtra por trecho do nome e `?incluirInativas=true` traz também as inativas |
 | `GET /api/areas/{id}` | autenticado | Detalha uma área |
-| `POST /api/areas` | `ADMIN` | Cria uma área (201 + `Location`) |
-| `PUT /api/areas/{id}` | `ADMIN` | Renomeia uma área |
-| `PATCH /api/areas/{id}/inativar` | `ADMIN` | Inativa a área |
-| `PATCH /api/areas/{id}/ativar` | `ADMIN` | Reativa a área |
+| `GET /api/areas/{id}/trilhas` | autenticado | Trilhas ativas da área, com os mesmos filtros de `GET /api/trilhas` |
+| `POST /api/areas` | `ADMIN`, `GESTOR` | Cria uma área (201 + `Location`) |
+| `PUT /api/areas/{id}` | `ADMIN`, `GESTOR` | Edita nome e descrição |
+| `PATCH /api/areas/{id}/inativar` | `ADMIN`, `GESTOR` | Inativa a área |
+| `PATCH /api/areas/{id}/ativar` | `ADMIN`, `GESTOR` | Reativa a área |
 
 A leitura é liberada a qualquer usuário autenticado porque o front precisa
-montar os selects; a gestão exige `ROLE_ADMIN` e um colaborador recebe **403**.
+montar os selects; a gestão exige `ROLE_ADMIN` ou `ROLE_GESTOR` e um
+colaborador recebe **403**.
 
 Duas regras de negócio valem a pena conhecer:
 
@@ -226,22 +228,31 @@ Catálogo de trilhas de aprendizagem e o progresso de cada colaborador nelas.
 
 | Endpoint | Acesso | O que faz |
 |---|---|---|
-| `GET /api/trilhas` | autenticado | Lista as trilhas ativas do tenant, com o progresso de quem chamou |
-| `GET /api/trilhas/{id}` | autenticado | Detalha a trilha + o progresso de quem chamou |
-| `GET /api/trilhas/{id}/progresso` | autenticado | Progresso próprio (404 se nunca iniciou) |
-| `POST /api/trilhas/{id}/progresso` | autenticado | Inicia a trilha para si (idempotente) |
-| `PATCH /api/trilhas/{id}/progresso` | autenticado | Muda o status do próprio progresso |
-| `POST /api/trilhas` | `ADMIN` | Cria uma trilha |
+| `GET /api/trilhas` | autenticado | Lista paginada das trilhas ativas do tenant, cada uma com o progresso do usuário |
+| `POST /api/trilhas` | `ADMIN` | Cria uma trilha (201 + `Location`) |
+| `GET /api/trilhas/{id}` | autenticado | Detalhe da trilha + progresso do usuário |
 | `PUT /api/trilhas/{id}` | `ADMIN` | Edita a trilha |
-| `PATCH /api/trilhas/{id}/inativar` | `ADMIN` | Tira do catálogo |
+| `PATCH /api/trilhas/{id}/inativar` | `ADMIN` | Tira do catálogo (o progresso de quem já fazia é preservado) |
 | `PATCH /api/trilhas/{id}/ativar` | `ADMIN` | Devolve ao catálogo |
-| `POST /api/trilhas/{id}/atribuicoes` | `ADMIN`, `GESTOR` | Atribui a colaboradores ou a uma área |
+| `POST /api/trilhas/{id}/atribuicoes` | `ADMIN`, `GESTOR` | Atribui a colaboradores ou a uma área inteira |
+| `GET /api/trilhas/{id}/progresso` | autenticado | Progresso do usuário (404 se ainda não iniciou) |
+| `POST /api/trilhas/{id}/progresso` | autenticado | Inicia a trilha para o usuário (idempotente) |
+| `PATCH /api/trilhas/{id}/progresso` | autenticado | Muda o status do próprio progresso |
 
-Consulta e progresso são abertos a qualquer autenticado de propósito: quem
-impede ver trilha de outra empresa é o filtro por tenant no service, e o dono
-do progresso é sempre o usuário do token. Gerir o catálogo é do `ADMIN`;
-**atribuir** é também do `GESTOR`, porque distribuir trilha para a equipe é
-função dele.
+Consulta e progresso são abertos a qualquer autenticado: quem impede ver trilha
+de outra empresa é o filtro por tenant no service, e o dono do progresso é
+sempre o usuário do token. Gerir o catálogo é do `ADMIN`; **atribuir** é
+também do `GESTOR`, porque distribuir trilha para a equipe é função dele.
+
+Filtros de `GET /api/trilhas`, todos opcionais e combináveis:
+
+| Parâmetro | O que faz |
+|---|---|
+| `nome` | Trecho do nome, sem diferenciar maiúsculas |
+| `areaId` | Trilhas de uma área |
+| `status` | Status do **meu** progresso: `NAO_INICIADA` (inclui as que nunca iniciei), `EM_ANDAMENTO`, `CONCLUIDA`, `ATRASADA` |
+| `minhas=true` | Só as trilhas que iniciei ou recebi; aceita `sort=prazo` (sem prazo no fim) |
+| `recomendar=AREA` | Trilhas da minha área primeiro; a ordenação pedida vale entre elas |
 
 ### Atribuição
 
@@ -253,16 +264,13 @@ Atribuir é idempotente por pessoa: quem já tem a trilha é contado em
 `ignorados` e **mantém o progresso que já fez**. A resposta traz
 `{ atribuidos, ignorados, usuarioIds }`.
 
-### Trilha atrasada
-
-Uma atribuição está atrasada quando o prazo venceu e ela não foi concluída.
-Quem decide isso é um bean único, `RegraDePrazo`, usado pelos dois caminhos:
-
-- a **rotina diária** (`RotinaDeAtraso`, 3h da manhã) persiste o status `ATRASADA`;
-- a **leitura** aplica a mesma regra na resposta, então um prazo vencido já
-  aparece como atrasado **sem esperar a rotina**.
-
-Trilha concluída nunca fica atrasada, e concluir uma trilha atrasada continua
+**Status efetivo:** em todas as respostas e filtros, uma trilha com prazo
+vencido e não concluída aparece como `ATRASADA`, mesmo antes de essa situação
+ser gravada no banco. A regra fica num lugar só (`RegraDeAtraso`), e as
+consultas aplicam a mesma regra no banco (`AtribuicaoSpecifications.statusEfetivo`).
+Além disso, uma **rotina diária** (`RotinaDeAtraso`, 3h) persiste o status
+`ATRASADA` — a leitura não depende dela, mas o status gravado fica consultável.
+Trilha concluída nunca fica atrasada, e concluir uma atrasada continua
 permitido (vira `CONCLUIDA`).
 
 > **Nome único:** a regra "nome único por tenant" vale no service, não no
@@ -270,6 +278,27 @@ permitido (vira `CONCLUIDA`).
 > `cargo`). Duas requisições simultâneas com o mesmo nome não são barradas pelo
 > banco; se isso virar problema, é uma migration de uma linha **e** uma
 > atualização do DER.
+
+---
+
+## Acompanhamento das trilhas
+
+Para gestor e admin acompanharem o andamento dos colaboradores. Colaborador
+recebe **403**.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/atribuicoes` | `ADMIN`, `GESTOR` | Lista paginada: colaborador, área, trilha, status efetivo, prazo e percentual |
+| `GET /api/atribuicoes/colaboradores/{usuarioId}` | `ADMIN`, `GESTOR` | Todas as trilhas de um colaborador e os totais por status |
+| `GET /api/atribuicoes/exportar` | `ADMIN`, `GESTOR` | Mesmos filtros da listagem, em CSV (`?formato=csv`, o padrão) |
+
+Filtros: `trilhaId`, `areaId` (área do colaborador), `usuarioId` e `status`.
+A ordenação padrão é pelo nome do colaborador (`sort=usuario.nomeCompleto`).
+
+O CSV sai em UTF-8 com BOM e ponto e vírgula como separador, para o Excel em
+português abrir com os acentos certos. Um formato novo entra como mais uma
+implementação de `ExportadorAcompanhamento`, sem mudar o controller (a
+`ExportadorFactory` encontra os exportadores sozinha).
 
 ---
 
