@@ -3,6 +3,8 @@ package com.nexo.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,13 +17,22 @@ import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusAtribuicao;
 import com.nexo.entity.Tenant;
 import com.nexo.entity.Trilha;
+import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
 import com.nexo.exception.NomeDuplicadoException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
+import com.nexo.repository.CriterioRecomendacao;
+import com.nexo.repository.TrilhaAtribuicaoRepository;
+import com.nexo.repository.TrilhaFiltro;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
+import com.nexo.service.recomendacao.EstrategiaRecomendacaoFactory;
+import com.nexo.service.recomendacao.RecomendacaoPorArea;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +47,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -59,6 +72,11 @@ class TrilhaServiceTest {
     @Mock
     private UsuarioRepository usuarioRepository;
 
+    @Mock
+    private TrilhaAtribuicaoRepository trilhaAtribuicaoRepository;
+
+    private static final LocalDate HOJE = LocalDate.of(2026, 10, 5);
+
     private TrilhaService trilhaService;
 
     private Tenant tenant;
@@ -68,7 +86,10 @@ class TrilhaServiceTest {
 
     @BeforeEach
     void setUp() {
-        trilhaService = new TrilhaService(trilhaRepository, trilhaAtribuicaoService, areaRepository, usuarioRepository);
+        Clock relogio = Clock.fixed(HOJE.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC);
+        trilhaService = new TrilhaService(trilhaRepository, trilhaAtribuicaoService, trilhaAtribuicaoRepository,
+                areaRepository, usuarioRepository, new RegraDeAtraso(relogio),
+                new EstrategiaRecomendacaoFactory(List.of(new RecomendacaoPorArea())));
 
         tenant = tenantComId();
         requisitante = new UsuarioAutenticado(
@@ -137,15 +158,88 @@ class TrilhaServiceTest {
         ProgressoTrilhaResponse emAndamento = new ProgressoTrilhaResponse(
                 UUID.randomUUID(), new ProgressoTrilhaResponse.Recurso(trilhaId, "Onboarding"),
                 StatusAtribuicao.EM_ANDAMENTO, 50, null, null, null);
-        when(trilhaRepository.findByTenantIdAndAtivoTrue(tenant.getId(), pageable))
+        when(trilhaRepository.findAll(anyTrilhaSpec(), eq(pageable)))
                 .thenReturn(new PageImpl<>(List.of(trilha, outra)));
         when(trilhaAtribuicaoService.progressosDoRequisitante(requisitante))
                 .thenReturn(Map.of(trilhaId, emAndamento));
 
-        Page<TrilhaResumoResponse> pagina = trilhaService.listar(pageable, requisitante);
+        Page<TrilhaResumoResponse> pagina = trilhaService.listar(TrilhaFiltro.vazio(), pageable, requisitante);
 
         assertThat(pagina.getContent()).extracting(r -> r.progresso().status())
                 .containsExactly(StatusAtribuicao.EM_ANDAMENTO, StatusAtribuicao.NAO_INICIADA);
+    }
+
+    @Test
+    void listagemMostraComoAtrasadaATrilhaComPrazoVencido() {
+        Pageable pageable = PageRequest.of(0, 20);
+        ProgressoTrilhaResponse vencida = new ProgressoTrilhaResponse(
+                UUID.randomUUID(), new ProgressoTrilhaResponse.Recurso(trilhaId, "Onboarding"),
+                StatusAtribuicao.EM_ANDAMENTO, 50, HOJE.minusDays(1), null, null);
+        when(trilhaRepository.findAll(anyTrilhaSpec(), eq(pageable))).thenReturn(new PageImpl<>(List.of(trilha)));
+        when(trilhaAtribuicaoService.progressosDoRequisitante(requisitante)).thenReturn(Map.of(trilhaId, vencida));
+
+        Page<TrilhaResumoResponse> pagina = trilhaService.listar(TrilhaFiltro.vazio(), pageable, requisitante);
+
+        assertThat(pagina.getContent().get(0).progresso().status()).isEqualTo(StatusAtribuicao.ATRASADA);
+    }
+
+    @Test
+    void minhasTrilhasPartemDasAtribuicoesDoUsuario() {
+        TrilhaAtribuicao atribuicao = new TrilhaAtribuicao();
+        ReflectionTestUtils.setField(atribuicao, "id", UUID.randomUUID());
+        atribuicao.setTrilha(trilha);
+        atribuicao.setStatus(StatusAtribuicao.CONCLUIDA);
+        atribuicao.setPrazo(HOJE.minusDays(10));
+        when(trilhaAtribuicaoRepository.findAll(anyAtribuicaoSpec(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(atribuicao)));
+
+        Page<TrilhaResumoResponse> pagina = trilhaService.listar(
+                new TrilhaFiltro(null, null, null, true, null),
+                PageRequest.of(0, 20, Sort.by("prazo")),
+                requisitante);
+
+        // Concluída com prazo vencido continua concluída, nunca atrasada.
+        assertThat(pagina.getContent()).singleElement()
+                .extracting(r -> r.progresso().status()).isEqualTo(StatusAtribuicao.CONCLUIDA);
+        verify(trilhaRepository, never()).findAll(anyTrilhaSpec(), any(Pageable.class));
+    }
+
+    @Test
+    void comRecomendacaoAOrdenacaoVaiNaSpecificationENaoNoPageable() {
+        when(usuarioRepository.findById(requisitante.getId())).thenReturn(Optional.empty());
+        when(trilhaRepository.findAll(anyTrilhaSpec(), any(Pageable.class))).thenReturn(Page.empty());
+
+        trilhaService.listar(
+                new TrilhaFiltro(null, null, null, null, CriterioRecomendacao.AREA),
+                PageRequest.of(1, 10, Sort.by("nome")),
+                requisitante);
+
+        ArgumentCaptor<Pageable> pagina = ArgumentCaptor.forClass(Pageable.class);
+        verify(trilhaRepository).findAll(anyTrilhaSpec(), pagina.capture());
+        assertThat(pagina.getValue().getSort().isSorted()).isFalse();
+        assertThat(pagina.getValue().getPageNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void trilhasDeAreaDeOutroTenantRetornam404() {
+        Area deOutraEmpresa = new Area();
+        deOutraEmpresa.setTenant(tenantComId());
+        ReflectionTestUtils.setField(deOutraEmpresa, "id", UUID.randomUUID());
+        when(areaRepository.findById(deOutraEmpresa.getId())).thenReturn(Optional.of(deOutraEmpresa));
+
+        assertThatThrownBy(() -> trilhaService.listarPorArea(
+                deOutraEmpresa.getId(), null, PageRequest.of(0, 20), requisitante))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Specification<Trilha> anyTrilhaSpec() {
+        return any(Specification.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Specification<TrilhaAtribuicao> anyAtribuicaoSpec() {
+        return any(Specification.class);
     }
 
     @Test

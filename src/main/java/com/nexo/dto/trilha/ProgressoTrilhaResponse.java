@@ -51,11 +51,24 @@ public record ProgressoTrilhaResponse(
                 null, recursoDe(trilha), StatusAtribuicao.NAO_INICIADA, 0, null, null, null);
     }
 
+    /**
+     * Mesmo progresso com outro status (e o percentual correspondente) — usado
+     * para expor o status efetivo, em que prazo vencido conta como atrasada
+     * mesmo antes de a situação ser gravada no banco.
+     */
+    public ProgressoTrilhaResponse comStatus(StatusAtribuicao novoStatus) {
+        if (novoStatus == status) {
+            return this;
+        }
+        return new ProgressoTrilhaResponse(
+                id, trilha, novoStatus, percentualDe(novoStatus), prazo, atribuidoEm, concluidoEm);
+    }
+
     private static Recurso recursoDe(Trilha trilha) {
         return new Recurso(trilha.getId(), trilha.getNome());
     }
 
-    private static int percentualDe(StatusAtribuicao status) {
+    public static int percentualDe(StatusAtribuicao status) {
         return switch (status) {
             case NAO_INICIADA -> 0;
             case EM_ANDAMENTO, ATRASADA -> 50;
