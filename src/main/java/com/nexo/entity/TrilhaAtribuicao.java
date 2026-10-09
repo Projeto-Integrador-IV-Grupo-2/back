@@ -76,6 +76,33 @@ public class TrilhaAtribuicao {
     public TrilhaAtribuicao() {
     }
 
+    /**
+     * Único lugar que monta uma atribuição.
+     *
+     * <p>Existem dois caminhos para uma trilha chegar a um colaborador — ele
+     * mesmo iniciando, ou um gestor atribuindo — e os dois precisam preencher
+     * tenant, trilha, usuário, quem atribuiu e prazo da mesma forma. Centralizar
+     * aqui evita que um dos caminhos esqueça um campo (o {@code atribuido_por},
+     * por exemplo, é {@code NOT NULL} no banco).</p>
+     *
+     * @param trilha        trilha atribuída; dela sai o tenant
+     * @param colaborador   quem vai cumprir a trilha
+     * @param quemAtribuiu  quem originou a atribuição (o próprio colaborador, quando ele se inicia)
+     * @param prazo         data limite; {@code null} quando a trilha não tem prazo
+     * @param status        situação inicial
+     */
+    public static TrilhaAtribuicao nova(Trilha trilha, Usuario colaborador, Usuario quemAtribuiu,
+                                        LocalDate prazo, StatusAtribuicao status) {
+        TrilhaAtribuicao atribuicao = new TrilhaAtribuicao();
+        atribuicao.setTenant(trilha.getTenant());
+        atribuicao.setTrilha(trilha);
+        atribuicao.setUsuario(colaborador);
+        atribuicao.setAtribuidoPor(quemAtribuiu);
+        atribuicao.setPrazo(prazo);
+        atribuicao.setStatus(status);
+        return atribuicao;
+    }
+
     public UUID getId() {
         return id;
     }

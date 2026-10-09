@@ -12,6 +12,8 @@ import com.nexo.dto.trilha.CriarTrilhaRequest;
 import com.nexo.dto.trilha.ProgressoTrilhaResponse;
 import com.nexo.dto.trilha.TrilhaDetalheResponse;
 import com.nexo.dto.trilha.TrilhaResumoResponse;
+import com.nexo.dto.trilha.AtualizarTrilhaRequest;
+import com.nexo.event.TrilhaInativadaEvent;
 import com.nexo.entity.Area;
 import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusAtribuicao;
@@ -40,6 +42,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -75,6 +78,9 @@ class TrilhaServiceTest {
     @Mock
     private TrilhaAtribuicaoRepository trilhaAtribuicaoRepository;
 
+    @Mock
+    private ApplicationEventPublisher publisher;
+
     private static final LocalDate HOJE = LocalDate.of(2026, 10, 5);
 
     private TrilhaService trilhaService;
@@ -89,7 +95,7 @@ class TrilhaServiceTest {
         Clock relogio = Clock.fixed(HOJE.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC);
         trilhaService = new TrilhaService(trilhaRepository, trilhaAtribuicaoService, trilhaAtribuicaoRepository,
                 areaRepository, usuarioRepository, new RegraDeAtraso(relogio),
-                new EstrategiaRecomendacaoFactory(List.of(new RecomendacaoPorArea())));
+                new EstrategiaRecomendacaoFactory(List.of(new RecomendacaoPorArea())), publisher);
 
         tenant = tenantComId();
         requisitante = new UsuarioAutenticado(
@@ -294,6 +300,75 @@ class TrilhaServiceTest {
         assertThatThrownBy(() -> trilhaService.criar(
                 new CriarTrilhaRequest("Nova", deOutraEmpresa.getId(), null, null, null), requisitante))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ---- Card 42: edição e situação da trilha ----------------------------
+
+    @Test
+    void editaTrilhaMantendoOProprioNome() {
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaRepository.findByTenantIdAndNomeIgnoreCase(tenant.getId(), "Onboarding"))
+                .thenReturn(Optional.of(trilha));
+        when(trilhaRepository.saveAndFlush(trilha)).thenReturn(trilha);
+
+        TrilhaResumoResponse resposta = trilhaService.atualizar(
+                trilhaId, new AtualizarTrilhaRequest("Onboarding", null, 10, "Novos objetivos", null), requisitante);
+
+        assertThat(resposta.nome()).isEqualTo("Onboarding");
+        assertThat(trilha.getPrazoDias()).isEqualTo(10);
+        assertThat(trilha.getObjetivos()).isEqualTo("Novos objetivos");
+    }
+
+    @Test
+    void recusaRenomearParaNomeDeOutraTrilha() {
+        Trilha outra = new Trilha();
+        ReflectionTestUtils.setField(outra, "id", UUID.randomUUID());
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaRepository.findByTenantIdAndNomeIgnoreCase(tenant.getId(), "Integração"))
+                .thenReturn(Optional.of(outra));
+
+        assertThatThrownBy(() -> trilhaService.atualizar(
+                trilhaId, new AtualizarTrilhaRequest("Integração", null, null, null, null), requisitante))
+                .isInstanceOf(NomeDuplicadoException.class);
+
+        verify(trilhaRepository, never()).saveAndFlush(any(Trilha.class));
+    }
+
+    @Test
+    void editarTrilhaDeOutroTenantResultaEmNotFound() {
+        trilha.setTenant(tenantComId());
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+
+        assertThatThrownBy(() -> trilhaService.atualizar(
+                trilhaId, new AtualizarTrilhaRequest("Qualquer", null, null, null, null), requisitante))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void inativarTiraDoCatalogoEAnuncia() {
+        trilha.setAtivo(true);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaRepository.saveAndFlush(trilha)).thenReturn(trilha);
+
+        trilhaService.inativar(trilhaId, requisitante);
+
+        assertThat(trilha.isAtivo()).isFalse();
+        ArgumentCaptor<TrilhaInativadaEvent> evento = ArgumentCaptor.forClass(TrilhaInativadaEvent.class);
+        verify(publisher).publishEvent(evento.capture());
+        assertThat(evento.getValue().trilhaId()).isEqualTo(trilhaId);
+        assertThat(evento.getValue().inativadaPor()).isEqualTo(requisitante.getId());
+    }
+
+    @Test
+    void ativarDevolveATrilhaAoCatalogo() {
+        trilha.setAtivo(false);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaRepository.saveAndFlush(trilha)).thenReturn(trilha);
+
+        trilhaService.ativar(trilhaId, requisitante);
+
+        assertThat(trilha.isAtivo()).isTrue();
+        verify(publisher, never()).publishEvent(any(TrilhaInativadaEvent.class));
     }
 
     private Tenant tenantComId() {

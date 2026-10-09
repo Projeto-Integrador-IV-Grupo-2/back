@@ -224,14 +224,25 @@ em outra empresa.
 
 ## Trilhas
 
+Catálogo de trilhas de aprendizagem e o progresso de cada colaborador nelas.
+
 | Endpoint | Acesso | O que faz |
 |---|---|---|
 | `GET /api/trilhas` | autenticado | Lista paginada das trilhas ativas do tenant, cada uma com o progresso do usuário |
 | `POST /api/trilhas` | `ADMIN` | Cria uma trilha (201 + `Location`) |
 | `GET /api/trilhas/{id}` | autenticado | Detalhe da trilha + progresso do usuário |
+| `PUT /api/trilhas/{id}` | `ADMIN` | Edita a trilha |
+| `PATCH /api/trilhas/{id}/inativar` | `ADMIN` | Tira do catálogo (o progresso de quem já fazia é preservado) |
+| `PATCH /api/trilhas/{id}/ativar` | `ADMIN` | Devolve ao catálogo |
+| `POST /api/trilhas/{id}/atribuicoes` | `ADMIN`, `GESTOR` | Atribui a colaboradores ou a uma área inteira |
 | `GET /api/trilhas/{id}/progresso` | autenticado | Progresso do usuário (404 se ainda não iniciou) |
 | `POST /api/trilhas/{id}/progresso` | autenticado | Inicia a trilha para o usuário (idempotente) |
 | `PATCH /api/trilhas/{id}/progresso` | autenticado | Muda o status do próprio progresso |
+
+Consulta e progresso são abertos a qualquer autenticado: quem impede ver trilha
+de outra empresa é o filtro por tenant no service, e o dono do progresso é
+sempre o usuário do token. Gerir o catálogo é do `ADMIN`; **atribuir** é
+também do `GESTOR`, porque distribuir trilha para a equipe é função dele.
 
 Filtros de `GET /api/trilhas`, todos opcionais e combináveis:
 
@@ -243,10 +254,30 @@ Filtros de `GET /api/trilhas`, todos opcionais e combináveis:
 | `minhas=true` | Só as trilhas que iniciei ou recebi; aceita `sort=prazo` (sem prazo no fim) |
 | `recomendar=AREA` | Trilhas da minha área primeiro; a ordenação pedida vale entre elas |
 
+### Atribuição
+
+O corpo leva **ou** `usuarioIds` **ou** `areaId` — nunca os dois (400 se vierem
+juntos ou nenhum) — mais um `prazo` opcional. Sem prazo informado, vale o
+`prazoDias` da trilha contado a partir de hoje.
+
+Atribuir é idempotente por pessoa: quem já tem a trilha é contado em
+`ignorados` e **mantém o progresso que já fez**. A resposta traz
+`{ atribuidos, ignorados, usuarioIds }`.
+
 **Status efetivo:** em todas as respostas e filtros, uma trilha com prazo
 vencido e não concluída aparece como `ATRASADA`, mesmo antes de essa situação
 ser gravada no banco. A regra fica num lugar só (`RegraDeAtraso`), e as
 consultas aplicam a mesma regra no banco (`AtribuicaoSpecifications.statusEfetivo`).
+Além disso, uma **rotina diária** (`RotinaDeAtraso`, 3h) persiste o status
+`ATRASADA` — a leitura não depende dela, mas o status gravado fica consultável.
+Trilha concluída nunca fica atrasada, e concluir uma atrasada continua
+permitido (vira `CONCLUIDA`).
+
+> **Nome único:** a regra "nome único por tenant" vale no service, não no
+> banco — o DER não define UNIQUE em `trilha.nome` (diferente de `area` e
+> `cargo`). Duas requisições simultâneas com o mesmo nome não são barradas pelo
+> banco; se isso virar problema, é uma migration de uma linha **e** uma
+> atualização do DER.
 
 ---
 
@@ -286,6 +317,7 @@ segue o padrão MVC em camadas:
 | `entity` | Classes `@Entity` que representam as tabelas do banco. | `Usuario.java` (tabela `usuario`) |
 | `security` | Configuração do Spring Security e filtros de autenticação (ex.: JWT). | `SecurityConfig.java`, `JwtAuthenticationFilter.java` |
 | `exception` | Exceções próprias + o tratador global que transforma erro em JSON padronizado. | `ResourceNotFoundException.java`, `GlobalExceptionHandler.java` |
+| `event` | Eventos de domínio publicados via `ApplicationEventPublisher`. Desacoplam "aconteceu X" de "reaja a X". | `TrilhaAtribuidaEvent.java` |
 
 > Todas as pastas já têm conteúdo: o mapeamento de `tenant`, `area`, `cargo` e
 > `usuario`, o CRUD de usuários (`/api/usuarios`) e a autenticação JWT
