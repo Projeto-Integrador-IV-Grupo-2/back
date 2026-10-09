@@ -12,6 +12,7 @@ import com.nexo.event.AtribuicaoAtrasadaEvent;
 import com.nexo.event.TrilhaAtribuidaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
+import com.nexo.repository.AreaRepository;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
@@ -52,17 +53,20 @@ public class TrilhaAtribuicaoService {
     private final TrilhaAtribuicaoRepository trilhaAtribuicaoRepository;
     private final TrilhaRepository trilhaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final AreaRepository areaRepository;
     private final RegraDeAtraso regraDeAtraso;
     private final ApplicationEventPublisher publisher;
 
     public TrilhaAtribuicaoService(TrilhaAtribuicaoRepository trilhaAtribuicaoRepository,
                                     TrilhaRepository trilhaRepository,
                                     UsuarioRepository usuarioRepository,
+                                    AreaRepository areaRepository,
                                     RegraDeAtraso regraDeAtraso,
                                     ApplicationEventPublisher publisher) {
         this.trilhaAtribuicaoRepository = trilhaAtribuicaoRepository;
         this.trilhaRepository = trilhaRepository;
         this.usuarioRepository = usuarioRepository;
+        this.areaRepository = areaRepository;
         this.regraDeAtraso = regraDeAtraso;
         this.publisher = publisher;
     }
@@ -141,7 +145,7 @@ public class TrilhaAtribuicaoService {
     public ProgressoTrilhaResponse iniciar(UUID trilhaId, UsuarioAutenticado requisitante) {
         Trilha trilha = buscarTrilhaNoTenant(trilhaId, requisitante.getTenantId());
         return trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId())
-                .map(this::responder)
+                .map(this::comecarSeAindaNaoComecou)
                 .orElseGet(() -> responder(criarProgresso(trilha, requisitante)));
     }
 
@@ -198,6 +202,23 @@ public class TrilhaAtribuicaoService {
                 .collect(Collectors.toMap(a -> a.getTrilha().getId(), this::responder));
     }
 
+    /**
+     * Atribuição que o gestor criou nasce {@code NAO_INICIADA}; quando o
+     * colaborador clica em "iniciar", ela precisa de fato começar. Sem isto, o
+     * endpoint respondia 200 e a trilha continuava parada em "não iniciada".
+     *
+     * <p>Qualquer outro status é devolvido como está: iniciar é idempotente e
+     * não pode reabrir uma trilha concluída nem apagar o progresso de quem já
+     * estava em andamento.</p>
+     */
+    private ProgressoTrilhaResponse comecarSeAindaNaoComecou(TrilhaAtribuicao atribuicao) {
+        if (atribuicao.getStatus() != StatusAtribuicao.NAO_INICIADA) {
+            return responder(atribuicao);
+        }
+        atribuicao.setStatus(StatusAtribuicao.EM_ANDAMENTO);
+        return responder(trilhaAtribuicaoRepository.saveAndFlush(atribuicao));
+    }
+
     /** Toda resposta sai daqui, para nenhuma leitura escapar da regra de prazo. */
     private ProgressoTrilhaResponse responder(TrilhaAtribuicao progresso) {
         return ProgressoTrilhaResponse.de(progresso)
@@ -206,6 +227,12 @@ public class TrilhaAtribuicaoService {
 
     private List<Usuario> resolverDestinatarios(AtribuirTrilhaRequest request, UUID tenantId) {
         if (request.temArea()) {
+            // Área inexistente ou de outro tenant é 404, como no resto do
+            // projeto — sem isto, cairia no 409 de "área sem colaboradores".
+            areaRepository.findById(request.areaId())
+                    .filter(area -> area.getTenant().getId().equals(tenantId))
+                    .orElseThrow(() -> new ResourceNotFoundException("Área não encontrada: " + request.areaId()));
+
             List<Usuario> daArea = usuarioRepository.findByTenantIdAndAreaIdAndAtivoTrue(tenantId, request.areaId());
             if (daArea.isEmpty()) {
                 throw new OperacaoNaoPermitidaException("A área não tem colaboradores ativos para receber a trilha");

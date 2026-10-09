@@ -21,6 +21,7 @@ import com.nexo.event.AtribuicaoAtrasadaEvent;
 import com.nexo.event.TrilhaAtribuidaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
+import com.nexo.repository.AreaRepository;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
@@ -59,6 +60,9 @@ class TrilhaAtribuicaoServiceTest {
     private UsuarioRepository usuarioRepository;
 
     @Mock
+    private AreaRepository areaRepository;
+
+    @Mock
     private ApplicationEventPublisher publisher;
 
     private TrilhaAtribuicaoService trilhaAtribuicaoService;
@@ -80,7 +84,8 @@ class TrilhaAtribuicaoServiceTest {
     @BeforeEach
     void setUp() {
         trilhaAtribuicaoService = new TrilhaAtribuicaoService(
-                trilhaAtribuicaoRepository, trilhaRepository, usuarioRepository, regraDeAtraso, publisher);
+                trilhaAtribuicaoRepository, trilhaRepository, usuarioRepository, areaRepository,
+                regraDeAtraso, publisher);
         tenant = tenantComId();
         requisitante = new UsuarioAutenticado(
                 UUID.randomUUID(), tenant.getId(), "Maria Silva", "maria.silva@empresa.com",
@@ -315,6 +320,7 @@ class TrilhaAtribuicaoServiceTest {
         UUID areaId = UUID.randomUUID();
         Usuario daArea = colaboradorAtivo();
         when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(areaRepository.findById(areaId)).thenReturn(Optional.of(areaDoTenant(areaId)));
         when(usuarioRepository.findByTenantIdAndAreaIdAndAtivoTrue(tenant.getId(), areaId))
                 .thenReturn(List.of(daArea));
         when(usuarioRepository.getReferenceById(requisitante.getId()))
@@ -396,6 +402,53 @@ class TrilhaAtribuicaoServiceTest {
 
         assertThat(resposta.status()).isEqualTo(StatusAtribuicao.CONCLUIDA);
         assertThat(resposta.concluidoEm()).isNotNull();
+    }
+
+    @Test
+    void iniciarUmaAtribuicaoDoGestorColocaEmAndamento() {
+        TrilhaAtribuicao doGestor = progressoExistente(StatusAtribuicao.NAO_INICIADA);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(doGestor));
+        when(trilhaAtribuicaoRepository.saveAndFlush(doGestor)).thenReturn(doGestor);
+
+        ProgressoTrilhaResponse resposta = trilhaAtribuicaoService.iniciar(trilhaId, requisitante);
+
+        assertThat(resposta.status()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
+        assertThat(doGestor.getStatus()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
+    }
+
+    @Test
+    void iniciarNaoMexeEmProgressoQueJaComecou() {
+        TrilhaAtribuicao concluida = progressoExistente(StatusAtribuicao.CONCLUIDA);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(concluida));
+
+        ProgressoTrilhaResponse resposta = trilhaAtribuicaoService.iniciar(trilhaId, requisitante);
+
+        assertThat(resposta.status()).isEqualTo(StatusAtribuicao.CONCLUIDA);
+        verify(trilhaAtribuicaoRepository, never()).saveAndFlush(any(TrilhaAtribuicao.class));
+    }
+
+    @Test
+    void areaInexistenteNaAtribuicaoResultaEmNotFound() {
+        trilha.setAtivo(true);
+        UUID areaId = UUID.randomUUID();
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(areaRepository.findById(areaId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> trilhaAtribuicaoService.atribuir(
+                trilhaId, new AtribuirTrilhaRequest(null, areaId, null), requisitante))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    private com.nexo.entity.Area areaDoTenant(UUID id) {
+        com.nexo.entity.Area area = new com.nexo.entity.Area();
+        area.setTenant(tenant);
+        area.setNome("Área " + id);
+        ReflectionTestUtils.setField(area, "id", id);
+        return area;
     }
 
     private Usuario colaboradorAtivo() {

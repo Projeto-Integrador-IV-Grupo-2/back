@@ -577,6 +577,81 @@ class TrilhaControllerTest {
     }
 
     @Test
+    /**
+     * Regressão: a atribuição criada pelo gestor nasce {@code NAO_INICIADA}, e
+     * "iniciar trilha" respondia 200 deixando-a parada nesse status.
+     */
+    void colaboradorIniciaTrilhaQueOGestorAtribuiu() throws Exception {
+        Usuario gestor = criaUsuario(tenantSeed(), Perfil.GESTOR);
+        Trilha trilha = criaTrilha(gestor);
+        Usuario colaborador = criaUsuario(tenantSeed());
+        String tokenGestor = tokenDe(gestor);
+
+        mockMvc.perform(post("/api/trilhas/{id}/atribuicoes", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenGestor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new AtribuirTrilhaRequest(List.of(colaborador.getId()), null, null))))
+                .andExpect(status().isOk());
+
+        String tokenColaborador = tokenDe(colaborador);
+        mockMvc.perform(get("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NAO_INICIADA"));
+
+        mockMvc.perform(post("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EM_ANDAMENTO"));
+
+        // E persistiu de verdade, não só na resposta.
+        mockMvc.perform(get("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenColaborador))
+                .andExpect(jsonPath("$.status").value("EM_ANDAMENTO"));
+    }
+
+    @Test
+    void iniciarNaoReabreTrilhaJaConcluida() throws Exception {
+        Usuario colaborador = criaUsuario(tenantSeed());
+        Trilha trilha = criaTrilha(colaborador);
+        criaProgresso(trilha, colaborador, StatusAtribuicao.CONCLUIDA);
+        String token = tokenDe(colaborador);
+
+        mockMvc.perform(post("/api/trilhas/{id}/progresso", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONCLUIDA"));
+    }
+
+    @Test
+    void atribuirParaAreaInexistenteRetorna404() throws Exception {
+        Usuario admin = criaUsuario(tenantSeed(), Perfil.ADMIN);
+        Trilha trilha = criaTrilha(admin);
+        String token = tokenDe(admin);
+
+        mockMvc.perform(post("/api/trilhas/{id}/atribuicoes", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new AtribuirTrilhaRequest(null, UUID.randomUUID(), null))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void usuarioIdsComNuloRetorna400EmVezDe500() throws Exception {
+        Usuario admin = criaUsuario(tenantSeed(), Perfil.ADMIN);
+        Trilha trilha = criaTrilha(admin);
+        String token = tokenDe(admin);
+
+        mockMvc.perform(post("/api/trilhas/{id}/atribuicoes", trilha.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"usuarioIds\":[null]}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void gestorAtribuiTrilhaEReatribuirNaoDuplica() throws Exception {
         Usuario gestor = criaUsuario(tenantSeed(), Perfil.GESTOR);
         Trilha trilha = criaTrilha(gestor);

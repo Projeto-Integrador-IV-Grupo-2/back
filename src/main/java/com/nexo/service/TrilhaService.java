@@ -27,6 +27,7 @@ import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Root;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import org.springframework.context.ApplicationEventPublisher;
@@ -215,11 +216,25 @@ public class TrilhaService {
                 });
 
         trilha.setNome(nome);
-        trilha.setArea(resolverArea(request.areaId(), requisitante.getTenantId()));
+        trilha.setArea(resolverAreaNaEdicao(trilha, request.areaId(), requisitante.getTenantId()));
         trilha.setPrazoDias(request.prazoDias());
         trilha.setObjetivos(textoOuNulo(request.objetivos()));
         trilha.setDescricao(textoOuNulo(request.descricao()));
         return TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
+    }
+
+    /**
+     * Na edição, a regra "área inativa não recebe trilhas" só vale quando a
+     * área <em>muda</em>. Se a trilha já estava numa área que foi inativada
+     * depois, trocar o nome dela não pode ser bloqueado — a área inativa não é
+     * uma escolha nova de quem está editando.
+     */
+    private Area resolverAreaNaEdicao(Trilha trilha, UUID areaIdPedida, UUID tenantId) {
+        UUID areaAtual = trilha.getArea() == null ? null : trilha.getArea().getId();
+        if (Objects.equals(areaAtual, areaIdPedida)) {
+            return trilha.getArea();
+        }
+        return resolverArea(areaIdPedida, tenantId);
     }
 
     /**

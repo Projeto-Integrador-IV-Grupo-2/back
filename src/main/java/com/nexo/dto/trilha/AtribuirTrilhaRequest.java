@@ -2,6 +2,7 @@ package com.nexo.dto.trilha;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -19,7 +20,7 @@ import java.util.UUID;
  * @param prazo      data limite; quando ausente, cai no {@code prazoDias} da trilha
  */
 public record AtribuirTrilhaRequest(
-        List<UUID> usuarioIds,
+        List<@NotNull(message = "usuarioIds não pode conter nulo") UUID> usuarioIds,
 
         UUID areaId,
 
