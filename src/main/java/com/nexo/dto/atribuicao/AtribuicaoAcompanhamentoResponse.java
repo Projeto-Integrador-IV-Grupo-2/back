@@ -42,7 +42,7 @@ public record AtribuicaoAcompanhamentoResponse(
                 recursoDe(usuario.getArea()),
                 recursoDe(atribuicao.getTrilha()),
                 statusEfetivo,
-                ProgressoTrilhaResponse.percentualDe(statusEfetivo),
+                ProgressoTrilhaResponse.percentualDe(atribuicao),
                 atribuicao.getPrazo(),
                 atribuicao.getAtribuidoEm(),
                 atribuicao.getConcluidoEm());

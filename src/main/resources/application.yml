@@ -71,6 +71,11 @@ app:
     allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
     max-age: 3600
 
+  # ---- Vimeo: só o oEmbed público, que não exige chave ----
+  vimeo:
+    oembed-url: ${VIMEO_OEMBED_URL:https://vimeo.com/api/oembed.json}
+    timeout: ${VIMEO_TIMEOUT:PT5S}
+
 logging:
   level:
     root: INFO

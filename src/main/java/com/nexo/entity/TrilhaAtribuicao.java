@@ -23,10 +23,10 @@ import org.hibernate.type.SqlTypes;
  * Progresso de um usuário numa trilha (Card 06).
  *
  * <p>Um usuário tem no máximo uma atribuição por trilha (ver
- * {@code uq_atribuicao_trilha_usuario}). O percentual de conclusão não é um
- * campo aqui — no DER do projeto ele é calculado a partir do progresso por
- * etapa ({@code etapa_progresso}), que depende de {@code trilha_etapa}/
- * {@code conteudo} (outro card, ainda não implementados nesta base).</p>
+ * {@code uq_atribuicao_trilha_usuario}). O {@code percentual} é etapas
+ * concluídas / total de etapas da trilha, recalculado por
+ * {@code RecalculoDeProgressoListener} sempre que o usuário conclui uma etapa
+ * ou as etapas da trilha mudam (issue #40).</p>
  */
 @Entity
 @Table(
@@ -72,6 +72,9 @@ public class TrilhaAtribuicao {
 
     @Column(name = "concluido_em")
     private OffsetDateTime concluidoEm;
+
+    @Column(name = "percentual", nullable = false)
+    private int percentual;
 
     public TrilhaAtribuicao() {
     }
@@ -165,6 +168,14 @@ public class TrilhaAtribuicao {
 
     public void setConcluidoEm(OffsetDateTime concluidoEm) {
         this.concluidoEm = concluidoEm;
+    }
+
+    public int getPercentual() {
+        return percentual;
+    }
+
+    public void setPercentual(int percentual) {
+        this.percentual = percentual;
     }
 
     @Override

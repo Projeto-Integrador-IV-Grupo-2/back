@@ -9,6 +9,7 @@ import com.nexo.exception.NomeDuplicadoException;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
+import com.nexo.repository.ConteudoRepository;
 import com.nexo.repository.UsuarioRepository;
 import java.util.List;
 import java.util.Map;
@@ -34,10 +35,13 @@ public class AreaService {
 
     private final AreaRepository areaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final ConteudoRepository conteudoRepository;
 
-    public AreaService(AreaRepository areaRepository, UsuarioRepository usuarioRepository) {
+    public AreaService(AreaRepository areaRepository, UsuarioRepository usuarioRepository,
+                       ConteudoRepository conteudoRepository) {
         this.areaRepository = areaRepository;
         this.usuarioRepository = usuarioRepository;
+        this.conteudoRepository = conteudoRepository;
     }
 
     @Transactional
@@ -51,13 +55,13 @@ public class AreaService {
         area.setNome(nome);
         area.setDescricao(textoOuNulo(request.descricao()));
         area.setAtivo(true);
-        return AreaResponse.from(gravar(area, nome), 0L);
+        return AreaResponse.from(gravar(area, nome), 0L, 0L);
     }
 
     /**
      * Página de áreas do tenant, opcionalmente filtrada por trecho do nome.
-     * As contagens de pessoas vêm numa única consulta agrupada para a página
-     * inteira, em vez de uma por área.
+     * As contagens de pessoas e de conteúdos vêm cada uma numa única consulta
+     * agrupada para a página inteira, em vez de uma por área.
      */
     @Transactional(readOnly = true)
     public Page<AreaResponse> listar(String nome, boolean incluirInativas, Pageable pageable,
@@ -69,13 +73,17 @@ public class AreaService {
                 : areaRepository.findByTenantIdAndAtivoTrueAndNomeContainingIgnoreCase(tenantId, trecho, pageable);
 
         List<UUID> ids = areas.getContent().stream().map(Area::getId).toList();
-        Map<UUID, Long> totais = ids.isEmpty()
-                ? Map.of()
-                : usuarioRepository.contarPorArea(ids).stream()
-                        .collect(Collectors.toMap(
-                                UsuarioRepository.TotalPorArea::getAreaId,
-                                UsuarioRepository.TotalPorArea::getTotal));
-        return areas.map(area -> AreaResponse.from(area, totais.getOrDefault(area.getId(), 0L)));
+        Map<UUID, Long> pessoas = ids.isEmpty() ? Map.of() : porArea(usuarioRepository.contarPorArea(ids));
+        Map<UUID, Long> conteudos = ids.isEmpty() ? Map.of() : porArea(conteudoRepository.contarPorArea(ids));
+        return areas.map(area -> AreaResponse.from(area,
+                pessoas.getOrDefault(area.getId(), 0L),
+                conteudos.getOrDefault(area.getId(), 0L)));
+    }
+
+    private static Map<UUID, Long> porArea(List<UsuarioRepository.TotalPorArea> totais) {
+        return totais.stream().collect(Collectors.toMap(
+                UsuarioRepository.TotalPorArea::getAreaId,
+                UsuarioRepository.TotalPorArea::getTotal));
     }
 
     @Transactional(readOnly = true)
@@ -109,7 +117,8 @@ public class AreaService {
         }
 
         area.setAtivo(false);
-        return AreaResponse.from(areaRepository.saveAndFlush(area), 0L);
+        return AreaResponse.from(areaRepository.saveAndFlush(area), 0L,
+                conteudoRepository.countByAreaId(area.getId()));
     }
 
     @Transactional
@@ -120,7 +129,9 @@ public class AreaService {
     }
 
     private AreaResponse comTotal(Area area) {
-        return AreaResponse.from(area, usuarioRepository.countByAreaId(area.getId()));
+        return AreaResponse.from(area,
+                usuarioRepository.countByAreaId(area.getId()),
+                conteudoRepository.countByAreaId(area.getId()));
     }
 
     private static String textoOuNulo(String valor) {

@@ -14,8 +14,7 @@ import java.util.UUID;
  * @param descricao      texto livre (pode ser nulo)
  * @param ativo          situação da área (inativa não deve ser oferecida em novos cadastros)
  * @param totalPessoas   usuários vinculados à área ({@code usuario.area_id})
- * @param totalConteudos conteúdos vinculados à área — sempre 0 enquanto a tabela
- *                       {@code conteudo} (outro card) não existir
+ * @param totalConteudos conteúdos vinculados à área ({@code conteudo.area_id})
  * @param criadoEm       auditoria
  * @param atualizadoEm   auditoria
  */
@@ -29,14 +28,14 @@ public record AreaResponse(
         OffsetDateTime criadoEm,
         OffsetDateTime atualizadoEm) {
 
-    public static AreaResponse from(Area area, long totalPessoas) {
+    public static AreaResponse from(Area area, long totalPessoas, long totalConteudos) {
         return new AreaResponse(
                 area.getId(),
                 area.getNome(),
                 area.getDescricao(),
                 area.isAtivo(),
                 totalPessoas,
-                0L,
+                totalConteudos,
                 area.getCriadoEm(),
                 area.getAtualizadoEm());
     }

@@ -71,8 +71,9 @@ class AcompanhamentoServiceTest {
     }
 
     @Test
-    void listagemDevolveStatusEfetivoEPercentualCorrespondente() {
+    void listagemDevolveStatusEfetivoEPercentualGravado() {
         TrilhaAtribuicao vencida = atribuicao(StatusAtribuicao.EM_ANDAMENTO, HOJE.minusDays(2));
+        vencida.setPercentual(50);
         when(trilhaAtribuicaoRepository.findAll(anySpec(), any(PageRequest.class)))
                 .thenReturn(new PageImpl<>(List.of(vencida)));
 

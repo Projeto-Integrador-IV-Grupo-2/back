@@ -16,6 +16,7 @@ import com.nexo.exception.NomeDuplicadoException;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
+import com.nexo.repository.ConteudoRepository;
 import com.nexo.repository.UsuarioRepository;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +47,9 @@ class AreaServiceTest {
 
     @Mock
     private UsuarioRepository usuarioRepository;
+
+    @Mock
+    private ConteudoRepository conteudoRepository;
 
     @InjectMocks
     private AreaService areaService;

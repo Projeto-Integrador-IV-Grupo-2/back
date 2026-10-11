@@ -10,11 +10,9 @@ import java.util.UUID;
 /**
  * Progresso do usuário autenticado numa trilha (Card 07).
  *
- * <p>{@code percentual} é uma aproximação a partir do {@code status} — o
- * cálculo "de verdade" (vídeos/etapas assistidos) depende de
- * {@code etapa_progresso}, que depende de {@code trilha_etapa}/{@code conteudo}
- * (outro card, ainda não implementados). Nada disso é persistido: é derivado
- * aqui, na resposta, então trocar a fórmula não exige migration.</p>
+ * <p>{@code percentual} é etapas concluídas / total de etapas (issue #40),
+ * gravado na atribuição e recalculado a cada etapa concluída ou alteração das
+ * etapas da trilha. Trilha concluída aparece sempre com 100.</p>
  */
 public record ProgressoTrilhaResponse(
         UUID id,
@@ -34,7 +32,7 @@ public record ProgressoTrilhaResponse(
                 progresso.getId(),
                 recursoDe(progresso.getTrilha()),
                 progresso.getStatus(),
-                percentualDe(progresso.getStatus()),
+                percentualDe(progresso),
                 progresso.getPrazo(),
                 progresso.getAtribuidoEm(),
                 progresso.getConcluidoEm());
@@ -52,27 +50,27 @@ public record ProgressoTrilhaResponse(
     }
 
     /**
-     * Mesmo progresso com outro status (e o percentual correspondente) — usado
-     * para expor o status efetivo, em que prazo vencido conta como atrasada
-     * mesmo antes de a situação ser gravada no banco.
+     * Mesmo progresso com outro status — usado para expor o status efetivo, em
+     * que prazo vencido conta como atrasada mesmo antes de a situação ser
+     * gravada no banco. O percentual não muda: atrasar não desfaz etapas.
      */
     public ProgressoTrilhaResponse comStatus(StatusAtribuicao novoStatus) {
         if (novoStatus == status) {
             return this;
         }
         return new ProgressoTrilhaResponse(
-                id, trilha, novoStatus, percentualDe(novoStatus), prazo, atribuidoEm, concluidoEm);
+                id, trilha, novoStatus, percentual, prazo, atribuidoEm, concluidoEm);
     }
 
     private static Recurso recursoDe(Trilha trilha) {
         return new Recurso(trilha.getId(), trilha.getNome());
     }
 
-    public static int percentualDe(StatusAtribuicao status) {
-        return switch (status) {
-            case NAO_INICIADA -> 0;
-            case EM_ANDAMENTO, ATRASADA -> 50;
-            case CONCLUIDA -> 100;
-        };
+    /**
+     * Percentual exibido de uma atribuição. Concluída é sempre 100, mesmo que
+     * tenha sido concluída manualmente numa trilha sem etapas.
+     */
+    public static int percentualDe(TrilhaAtribuicao atribuicao) {
+        return atribuicao.getStatus() == StatusAtribuicao.CONCLUIDA ? 100 : atribuicao.getPercentual();
     }
 }

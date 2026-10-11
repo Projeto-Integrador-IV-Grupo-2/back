@@ -95,7 +95,8 @@ class TrilhaControllerTest {
                 .andExpect(jsonPath("$.id").value(trilha.getId().toString()))
                 .andExpect(jsonPath("$.nome").value(trilha.getNome()))
                 .andExpect(jsonPath("$.progresso.status").value("EM_ANDAMENTO"))
-                .andExpect(jsonPath("$.progresso.percentual").value(50));
+                // Sem etapas concluídas, o percentual real é 0 (issue #40).
+                .andExpect(jsonPath("$.progresso.percentual").value(0));
     }
 
     @Test
