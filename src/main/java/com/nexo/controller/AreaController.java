@@ -2,7 +2,11 @@ package com.nexo.controller;
 
 import com.nexo.dto.area.AreaRequest;
 import com.nexo.dto.area.AreaResponse;
+import com.nexo.dto.trilha.TrilhaResumoResponse;
+import com.nexo.repository.TrilhaFiltro;
+import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.AreaService;
+import com.nexo.service.TrilhaService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
@@ -12,7 +16,9 @@ import org.springframework.data.web.PagedModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,9 +49,11 @@ public class AreaController {
     private static final String GESTAO = "hasAnyRole('ADMIN', 'GESTOR')";
 
     private final AreaService areaService;
+    private final TrilhaService trilhaService;
 
-    public AreaController(AreaService areaService) {
+    public AreaController(AreaService areaService, TrilhaService trilhaService) {
         this.areaService = areaService;
+        this.trilhaService = trilhaService;
     }
 
     @PostMapping
@@ -69,6 +77,15 @@ public class AreaController {
     @GetMapping("/{id}")
     public AreaResponse buscarPorId(@PathVariable UUID id, Authentication authentication) {
         return areaService.buscarPorId(id, authentication.getName());
+    }
+
+    /** Trilhas ativas da área, com o progresso do usuário e os mesmos filtros de {@code GET /api/trilhas}. */
+    @GetMapping("/{id}/trilhas")
+    public PagedModel<TrilhaResumoResponse> listarTrilhas(@PathVariable UUID id,
+                                                          @ModelAttribute TrilhaFiltro filtro,
+                                                          @PageableDefault(size = 20, sort = "nome") Pageable pageable,
+                                                          @AuthenticationPrincipal UsuarioAutenticado usuario) {
+        return new PagedModel<>(trilhaService.listarPorArea(id, filtro, pageable, usuario));
     }
 
     @PutMapping("/{id}")
