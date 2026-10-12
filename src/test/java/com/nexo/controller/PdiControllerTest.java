@@ -23,6 +23,7 @@ import com.nexo.repository.TenantRepository;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,6 +52,12 @@ import org.springframework.transaction.annotation.Transactional;
 class PdiControllerTest {
 
     private static final String SENHA = "senha-de-teste-123";
+
+    /**
+     * Prazo sempre no futuro: com a regra de atraso (RegraDeAtraso), um prazo
+     * fixo que já passou faria a trilha aparecer ATRASADA.
+     */
+    private static final String PRAZO = LocalDate.now().plusMonths(3).toString();
 
     @Autowired
     private MockMvc mockMvc;
@@ -144,7 +151,7 @@ class PdiControllerTest {
         String itemId = criaItem(token, pdiId, criaCompetencia(token));
 
         enviar(post("/api/pdis/{id}/itens/{itemId}/acoes", pdiId, itemId), token,
-                Map.of("tipo", "TRILHA", "prazo", "2026-06-30"))
+                Map.of("tipo", "TRILHA", "prazo", PRAZO))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors[0].field").value("trilhaId"));
     }
@@ -224,18 +231,18 @@ class PdiControllerTest {
         String itemA = criaItem(tokenGestor, pdiId, criaCompetencia(tokenGestor));
         String itemB = criaItem(tokenGestor, pdiId, criaCompetencia(tokenGestor));
         Map<String, Object> acaoTrilha = Map.of("tipo", "TRILHA", "trilhaId", trilha.getId().toString(),
-                "prazo", "2026-06-30");
+                "prazo", PRAZO);
 
         enviar(post("/api/pdis/{id}/itens/{itemId}/acoes", pdiId, itemA), tokenGestor, acaoTrilha)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDENTE"))
                 .andExpect(jsonPath("$.progressoTrilha.status").value("NAO_INICIADA"))
-                .andExpect(jsonPath("$.progressoTrilha.prazo").value("2026-06-30"));
+                .andExpect(jsonPath("$.progressoTrilha.prazo").value(PRAZO));
         // A mesma trilha em outra competência reaproveita a atribuição.
         enviar(post("/api/pdis/{id}/itens/{itemId}/acoes", pdiId, itemB), tokenGestor, acaoTrilha)
                 .andExpect(status().isCreated());
         enviar(post("/api/pdis/{id}/itens/{itemId}/acoes", pdiId, itemB), tokenGestor,
-                Map.of("tipo", "MENTORIA", "prazo", "2026-08-31", "descricao", "Mentoria com a gestora"))
+                Map.of("tipo", "MENTORIA", "prazo", PRAZO, "descricao", "Mentoria com a gestora"))
                 .andExpect(status().isCreated());
 
         List<TrilhaAtribuicao> atribuicoes = trilhaAtribuicaoRepository
@@ -273,9 +280,9 @@ class PdiControllerTest {
         String pdiId = criaPdi(token, criaUsuario(tenantSeed(), Perfil.COLABORADOR), "2026");
         String itemId = criaItem(token, pdiId, criaCompetencia(token));
         String acaoTrilha = idDe(enviar(post("/api/pdis/{id}/itens/{itemId}/acoes", pdiId, itemId), token,
-                Map.of("tipo", "TRILHA", "trilhaId", criaTrilha(gestor).getId().toString(), "prazo", "2026-06-30")));
+                Map.of("tipo", "TRILHA", "trilhaId", criaTrilha(gestor).getId().toString(), "prazo", PRAZO)));
         String mentoria = idDe(enviar(post("/api/pdis/{id}/itens/{itemId}/acoes", pdiId, itemId), token,
-                Map.of("tipo", "MENTORIA", "prazo", "2026-06-30", "descricao", "Mentoria")));
+                Map.of("tipo", "MENTORIA", "prazo", PRAZO, "descricao", "Mentoria")));
 
         enviar(patch("/api/pdis/{id}/itens/{itemId}/acoes/{acaoId}/status", pdiId, itemId, acaoTrilha), token,
                 Map.of("status", "CONCLUIDA"))
