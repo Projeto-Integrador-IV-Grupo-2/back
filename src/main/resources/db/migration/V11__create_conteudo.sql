@@ -1,5 +1,5 @@
 -- =========================================================================
--- V10 — Conteúdo de estudo (issue #40).
+-- V11 — Conteúdo de estudo (issue #40).
 --
 -- Material usado nas etapas das trilhas. Os vídeos ficam hospedados no
 -- Vimeo: aqui guardamos só o link, a duração e a miniatura, preenchidas pela

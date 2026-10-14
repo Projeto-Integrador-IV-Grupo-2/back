@@ -1,5 +1,5 @@
 -- =========================================================================
--- V9 — Categoria de conteúdo (issue #40).
+-- V10 — Categoria de conteúdo (issue #40).
 --
 -- Agrupa os conteúdos de estudo (ex.: "Onboarding", "Segurança da
 -- informação"). Catálogo por tenant, com nome único sem diferenciar

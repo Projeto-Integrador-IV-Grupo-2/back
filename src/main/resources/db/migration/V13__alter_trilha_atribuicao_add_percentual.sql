@@ -1,8 +1,8 @@
 -- =========================================================================
--- V12 — Percentual real de conclusão da trilha (issue #40).
+-- V13 — Percentual real de conclusão da trilha (issue #40).
 --
 -- Até aqui o percentual era estimado pelo status da atribuição. Com as
--- etapas (V11), ele passa a ser etapas concluídas / total de etapas, gravado
+-- etapas (V12), ele passa a ser etapas concluídas / total de etapas, gravado
 -- na atribuição e recalculado sempre que o usuário conclui uma etapa ou as
 -- etapas da trilha mudam. Gravar (em vez de calcular a cada leitura) mantém
 -- as listagens e o acompanhamento sem uma contagem extra por linha.

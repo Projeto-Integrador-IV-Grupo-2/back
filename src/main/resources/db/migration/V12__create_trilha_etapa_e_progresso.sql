@@ -1,5 +1,5 @@
 -- =========================================================================
--- V11 — Etapas da trilha e progresso por etapa (issue #40).
+-- V12 — Etapas da trilha e progresso por etapa (issue #40).
 --
 -- trilha_etapa: sequência ordenada de conteúdos de uma trilha. A ordem é
 -- única por trilha; a constraint é DEFERRABLE para que a reordenação

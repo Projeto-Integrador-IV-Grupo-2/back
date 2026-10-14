@@ -480,10 +480,10 @@ do PR. O workflow **não usa segredos**.
 | V6 | `V6__create_trilha.sql` | Tabela `trilha` |
 | V7 | `V7__create_trilha_atribuicao.sql` | Enum `status_atribuicao` e tabela `trilha_atribuicao` |
 | V8 | `V8__alter_area_add_descricao_auditoria.sql` | Descrição e auditoria em `area` |
-| V9 | `V9__create_categoria.sql` | Tabela `categoria` (nome único por tenant) |
-| V10 | `V10__create_conteudo.sql` | Enums `tipo_conteudo`/`status_conteudo` e tabela `conteudo` (com `video_url` e `duracao_segundos`) |
-| V11 | `V11__create_trilha_etapa_e_progresso.sql` | Tabelas `trilha_etapa` (ordem única por trilha) e `etapa_progresso` |
-| V12 | `V12__alter_trilha_atribuicao_add_percentual.sql` | Coluna `percentual` em `trilha_atribuicao` |
+| V10 | `V10__create_categoria.sql` | Tabela `categoria` (nome único por tenant) |
+| V11 | `V11__create_conteudo.sql` | Enums `tipo_conteudo`/`status_conteudo` e tabela `conteudo` (com `video_url` e `duracao_segundos`) |
+| V12 | `V12__create_trilha_etapa_e_progresso.sql` | Tabelas `trilha_etapa` (ordem única por trilha) e `etapa_progresso` |
+| V13 | `V13__alter_trilha_atribuicao_add_percentual.sql` | Coluna `percentual` em `trilha_atribuicao` |
 
 Regras do modelo que o código precisa respeitar:
 
