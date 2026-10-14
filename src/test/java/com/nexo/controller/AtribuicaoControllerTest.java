@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexo.config.ClockConfig;
 import com.nexo.dto.LoginRequest;
 import com.nexo.dto.LoginResponse;
 import com.nexo.entity.Area;
@@ -52,7 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 class AtribuicaoControllerTest {
 
     private static final String SENHA = "senha-de-teste-123";
-    private static final LocalDate HOJE = LocalDate.now();
+    private static final LocalDate HOJE = LocalDate.now(ClockConfig.FUSO);
 
     @Autowired
     private MockMvc mockMvc;
