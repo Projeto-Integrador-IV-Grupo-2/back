@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -20,6 +22,10 @@ public interface UsuarioRepository
     boolean existsByEmailIgnoreCase(String email);
 
     boolean existsByTenantIdAndEmailIgnoreCase(UUID tenantId, String email);
+
+    /** Opções de colaborador ao criar um PDI: usuários ativos do tenant. {@code nome} vazio casa com todos. */
+    Page<Usuario> findByTenantIdAndAtivoTrueAndNomeCompletoContainingIgnoreCase(UUID tenantId, String nome,
+                                                                                Pageable pageable);
 
     /** Usado para recusar a inativação de uma área que ainda tem usuários vinculados. */
     boolean existsByAreaId(UUID areaId);

@@ -19,6 +19,7 @@ import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
 import com.nexo.event.AtribuicaoAtrasadaEvent;
 import com.nexo.event.TrilhaAtribuidaEvent;
+import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
@@ -36,6 +37,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -159,6 +161,7 @@ class TrilhaAtribuicaoServiceTest {
 
         assertThat(response.status()).isEqualTo(StatusAtribuicao.ATRASADA);
         assertThat(response.concluidoEm()).isNull();
+        verify(publisher, never()).publishEvent(any(Object.class));
     }
 
     @Test
@@ -216,6 +219,25 @@ class TrilhaAtribuicaoServiceTest {
         assertThat(response.status()).isEqualTo(StatusAtribuicao.CONCLUIDA);
         assertThat(response.percentual()).isEqualTo(100);
         assertThat(response.concluidoEm()).isNotNull();
+    }
+
+    @Test
+    void concluirPublicaTrilhaConcluidaEvent() {
+        TrilhaAtribuicao existente = progressoExistente(StatusAtribuicao.EM_ANDAMENTO);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(existente));
+        when(trilhaAtribuicaoRepository.saveAndFlush(any(TrilhaAtribuicao.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        trilhaAtribuicaoService.concluir(trilhaId, requisitante);
+
+        ArgumentCaptor<TrilhaConcluidaEvent> evento = ArgumentCaptor.forClass(TrilhaConcluidaEvent.class);
+        verify(publisher).publishEvent(evento.capture());
+        assertThat(evento.getValue().tenantId()).isEqualTo(tenant.getId());
+        assertThat(evento.getValue().trilhaId()).isEqualTo(trilhaId);
+        assertThat(evento.getValue().usuarioId()).isEqualTo(requisitante.getId());
+        assertThat(evento.getValue().concluidoEm()).isEqualTo(existente.getConcluidoEm());
     }
 
     @Test

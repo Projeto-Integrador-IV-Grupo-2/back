@@ -343,6 +343,43 @@ implementação de `ExportadorAcompanhamento`, sem mudar o controller (a
 
 ---
 
+## PDI (Plano de Desenvolvimento Individual)
+
+O PDI vive dentro das trilhas: cada competência do plano tem ações, e a ação do
+tipo `TRILHA` é uma trilha atribuída ao colaborador. Tabelas criadas pela
+`V9__create_competencia_e_pdi.sql` (`competencia`, `pdi`, `pdi_item`, `pdi_acao`).
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/competencias` | `ADMIN`, `GESTOR` | Lista as competências ativas; `?nome=` filtra, `?incluirInativas=true` traz as inativas |
+| `GET /api/competencias/{id}` | `ADMIN`, `GESTOR` | Detalha uma competência |
+| `POST /api/competencias` | `ADMIN`, `GESTOR` | Cria (`nome`, `descricao`, `tipo`: `TECNICA`/`COMPORTAMENTAL`) |
+| `PUT /api/competencias/{id}` | `ADMIN`, `GESTOR` | Edita |
+| `PATCH /api/competencias/{id}/inativar` · `/ativar` | `ADMIN`, `GESTOR` | Muda a situação |
+| `GET /api/pdis/colaboradores` | `ADMIN`, `GESTOR` | Usuários ativos do tenant (id, nome, e-mail) para escolher o colaborador ao criar o PDI; `?nome=` filtra |
+| `POST /api/pdis` | `ADMIN`, `GESTOR` | Cria o PDI (`colaboradorId`, `ciclo`, `inicio`, `fim`); nasce `ATIVO` e quem cria vira o gestor |
+| `GET /api/pdis` | autenticado | Lista os PDIs visíveis, com percentual |
+| `GET /api/pdis/meu` | autenticado | PDI ativo do usuário, com competências, trilhas ligadas e o progresso em cada uma; **404** se não houver |
+| `GET /api/pdis/{id}` | autenticado | Detalhe com itens e ações |
+| `PATCH /api/pdis/{id}/status` | `ADMIN`, `GESTOR` | Muda o status (`ATIVO`, `CONCLUIDO`, `CANCELADO`) |
+| `POST /api/pdis/{id}/itens` | `ADMIN`, `GESTOR` | Inclui competência (`competenciaId`, `nivelAtual` e `nivelAlvo` de 1 a 5, `observacao`) |
+| `POST /api/pdis/{id}/itens/{itemId}/acoes` | `ADMIN`, `GESTOR` | Inclui ação (`tipo`: `TRILHA`/`MENTORIA`/`OUTRO`, `trilhaId` se `TRILHA`, `prazo`, `descricao`) |
+| `PATCH /api/pdis/{id}/itens/{itemId}/acoes/{acaoId}/status` | `ADMIN`, `GESTOR` | Status manual de ação que **não** é de trilha |
+
+Regras que valem a pena conhecer:
+
+- **Quem vê:** `ADMIN` vê todos os PDIs do tenant; `GESTOR`, os PDIs em que é o
+  gestor; todo usuário vê o próprio. Gerenciar é do `ADMIN` ou do gestor do PDI.
+  Fora disso — inclusive outro tenant — a resposta é **404**.
+- **Um PDI por colaborador por ciclo** e **competência única por PDI** (**409**).
+  Nível fora de 1 a 5 é **400** com o erro no campo.
+- **Ação `TRILHA`** atribui a trilha ao colaborador com o prazo da ação
+  (`NAO_INICIADA`), sem duplicar se ele já tinha atribuição. Quando o colaborador
+  conclui a trilha, a ação é concluída sozinha (`TrilhaConcluidaEvent`).
+- **Percentual do PDI** = ações concluídas / total de ações (0% sem ações).
+
+---
+
 ## O que vai em cada pasta
 
 Código em [`src/main/java/com/nexo/`](src/main/java/com/nexo/). A organização
