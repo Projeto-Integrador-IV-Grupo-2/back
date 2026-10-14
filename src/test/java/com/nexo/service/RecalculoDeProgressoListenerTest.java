@@ -12,6 +12,7 @@ import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
 import com.nexo.event.EtapaConcluidaEvent;
 import com.nexo.event.EtapasDaTrilhaAlteradasEvent;
+import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.repository.EtapaProgressoRepository;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaEtapaRepository;
@@ -24,8 +25,10 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,6 +45,9 @@ class RecalculoDeProgressoListenerTest {
     @Mock
     private EtapaProgressoRepository etapaProgressoRepository;
 
+    @Mock
+    private ApplicationEventPublisher publisher;
+
     private RecalculoDeProgressoListener listener;
     private Trilha trilha;
     private Usuario usuario;
@@ -50,7 +56,7 @@ class RecalculoDeProgressoListenerTest {
     void prepara() {
         Clock clock = Clock.fixed(Instant.parse("2026-10-11T12:00:00Z"), ZoneId.of("America/Sao_Paulo"));
         listener = new RecalculoDeProgressoListener(trilhaAtribuicaoRepository, trilhaEtapaRepository,
-                etapaProgressoRepository, new CalculadoraDePercentual(), clock);
+                etapaProgressoRepository, new CalculadoraDePercentual(), publisher, clock);
         trilha = new Trilha();
         ReflectionTestUtils.setField(trilha, "id", UUID.randomUUID());
         usuario = new Usuario();
@@ -67,6 +73,7 @@ class RecalculoDeProgressoListenerTest {
         assertThat(atribuicao.getPercentual()).isEqualTo(25);
         assertThat(atribuicao.getStatus()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
         assertThat(atribuicao.getConcluidoEm()).isNull();
+        verify(publisher, never()).publishEvent(any());
     }
 
     @Test
@@ -79,6 +86,25 @@ class RecalculoDeProgressoListenerTest {
         assertThat(atribuicao.getPercentual()).isEqualTo(100);
         assertThat(atribuicao.getStatus()).isEqualTo(StatusAtribuicao.CONCLUIDA);
         assertThat(atribuicao.getConcluidoEm()).isNotNull();
+
+        ArgumentCaptor<TrilhaConcluidaEvent> evento = ArgumentCaptor.forClass(TrilhaConcluidaEvent.class);
+        verify(publisher).publishEvent(evento.capture());
+        assertThat(evento.getValue()).isEqualTo(new TrilhaConcluidaEvent(
+                TENANT, trilha.getId(), usuario.getId(), atribuicao.getConcluidoEm()));
+    }
+
+    @Test
+    void removerAUnicaEtapaPendenteConcluiATrilhaEAvisa() {
+        TrilhaAtribuicao atribuicao = atribuicao(StatusAtribuicao.EM_ANDAMENTO);
+        when(trilhaEtapaRepository.countByTrilhaId(trilha.getId())).thenReturn(2L);
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndStatusNot(trilha.getId(), StatusAtribuicao.CONCLUIDA))
+                .thenReturn(List.of(atribuicao));
+        when(etapaProgressoRepository.contarConcluidas(trilha.getId(), usuario.getId())).thenReturn(2L);
+
+        listener.aoAlterarEtapas(new EtapasDaTrilhaAlteradasEvent(trilha.getId(), TENANT));
+
+        assertThat(atribuicao.getStatus()).isEqualTo(StatusAtribuicao.CONCLUIDA);
+        verify(publisher).publishEvent(any(TrilhaConcluidaEvent.class));
     }
 
     @Test
@@ -118,6 +144,7 @@ class RecalculoDeProgressoListenerTest {
         assertThat(atribuicao.getStatus()).isEqualTo(StatusAtribuicao.CONCLUIDA);
         assertThat(atribuicao.getPercentual()).isEqualTo(100);
         verify(trilhaAtribuicaoRepository, never()).save(any());
+        verify(publisher, never()).publishEvent(any());
     }
 
     private void quandoConcluiu(TrilhaAtribuicao atribuicao, long concluidas, long total) {

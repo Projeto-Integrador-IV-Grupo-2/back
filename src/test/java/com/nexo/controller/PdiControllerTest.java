@@ -274,6 +274,38 @@ class PdiControllerTest {
     }
 
     @Test
+    void concluirAUltimaEtapaDaTrilhaConcluiAAcaoDoPdi() throws Exception {
+        Usuario gestor = criaUsuario(tenantSeed(), Perfil.GESTOR);
+        Usuario colaborador = criaUsuario(tenantSeed(), Perfil.COLABORADOR);
+        Trilha trilha = criaTrilha(gestor);
+        String tokenGestor = tokenDe(gestor);
+        String conteudoId = idDe(enviar(post("/api/conteudos"), tokenGestor,
+                Map.of("titulo", "Leitura " + UUID.randomUUID(), "tipo", "TEXTO", "corpo", "Texto da etapa")));
+        mockMvc.perform(patch("/api/conteudos/{id}/publicar", conteudoId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenGestor))
+                .andExpect(status().isOk());
+        String etapaId = idDe(enviar(post("/api/trilhas/{id}/etapas", trilha.getId()), tokenGestor,
+                Map.of("conteudoId", conteudoId)));
+        String pdiId = criaPdi(tokenGestor, colaborador, "2026");
+        String itemId = criaItem(tokenGestor, pdiId, criaCompetencia(tokenGestor));
+        enviar(post("/api/pdis/{id}/itens/{itemId}/acoes", pdiId, itemId), tokenGestor,
+                Map.of("tipo", "TRILHA", "trilhaId", trilha.getId().toString(), "prazo", PRAZO))
+                .andExpect(status().isCreated());
+
+        String tokenColaborador = tokenDe(colaborador);
+        mockMvc.perform(post("/api/trilhas/{id}/etapas/{etapaId}/concluir", trilha.getId(), etapaId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.progresso.status").value("CONCLUIDA"));
+
+        mockMvc.perform(get("/api/pdis/meu").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.acoesConcluidas").value(1))
+                .andExpect(jsonPath("$.itens[0].acoes[0].status").value("CONCLUIDA"))
+                .andExpect(jsonPath("$.itens[0].acoes[0].progressoTrilha.percentual").value(100));
+    }
+
+    @Test
     void statusDeAcaoDeTrilhaNaoMudaManualmenteMasMentoriaSim() throws Exception {
         Usuario gestor = criaUsuario(tenantSeed(), Perfil.GESTOR);
         String token = tokenDe(gestor);
