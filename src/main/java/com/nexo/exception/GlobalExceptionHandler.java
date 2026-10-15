@@ -138,6 +138,26 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    /** Campo recusado por regra de negócio (ex.: link do Vimeo inválido) — vai no {@code fieldErrors}. */
+    @ExceptionHandler(CampoInvalidoException.class)
+    public ResponseEntity<ApiError> handleCampoInvalido(CampoInvalidoException ex, HttpServletRequest request) {
+        ApiError body = new ApiError(
+                Instant.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                ex.getMessage(),
+                request.getRequestURI(),
+                List.of(new ApiError.FieldValidationError(ex.getCampo(), ex.getMessage())));
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    @ExceptionHandler(ServicoExternoIndisponivelException.class)
+    public ResponseEntity<ApiError> handleServicoExterno(ServicoExternoIndisponivelException ex,
+                                                         HttpServletRequest request) {
+        log.warn("Serviço externo indisponível em {}: {}", request.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
+    }
+
     /** Ex.: {@code DELETE} numa rota que só aceita {@code GET}. Sem isto viraria 500. */
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiError> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,

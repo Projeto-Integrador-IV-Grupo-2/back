@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexo.config.ClockConfig;
 import com.nexo.dto.trilha.AtribuirTrilhaRequest;
 import com.nexo.dto.trilha.AtualizarTrilhaRequest;
 import com.nexo.dto.LoginRequest;
@@ -95,7 +96,8 @@ class TrilhaControllerTest {
                 .andExpect(jsonPath("$.id").value(trilha.getId().toString()))
                 .andExpect(jsonPath("$.nome").value(trilha.getNome()))
                 .andExpect(jsonPath("$.progresso.status").value("EM_ANDAMENTO"))
-                .andExpect(jsonPath("$.progresso.percentual").value(50));
+                // Sem etapas concluídas, o percentual real é 0 (issue #40).
+                .andExpect(jsonPath("$.progresso.percentual").value(0));
     }
 
     @Test
@@ -368,8 +370,8 @@ class TrilhaControllerTest {
         Area vendas = criaArea(usuario.getTenant(), "Vendas");
         Trilha vencidaNaArea = criaTrilha(usuario, "Vencida na área", vendas);
         Trilha vencidaForaDaArea = criaTrilha(usuario, "Vencida fora", null);
-        criaProgresso(vencidaNaArea, usuario, StatusAtribuicao.EM_ANDAMENTO, LocalDate.now().minusDays(1));
-        criaProgresso(vencidaForaDaArea, usuario, StatusAtribuicao.EM_ANDAMENTO, LocalDate.now().minusDays(1));
+        criaProgresso(vencidaNaArea, usuario, StatusAtribuicao.EM_ANDAMENTO, LocalDate.now(ClockConfig.FUSO).minusDays(1));
+        criaProgresso(vencidaForaDaArea, usuario, StatusAtribuicao.EM_ANDAMENTO, LocalDate.now(ClockConfig.FUSO).minusDays(1));
         String token = tokenDe(usuario);
 
         mockMvc.perform(get("/api/trilhas")
@@ -694,7 +696,7 @@ class TrilhaControllerTest {
         Usuario admin = criaUsuario(tenantSeed(), Perfil.ADMIN);
         Trilha trilha = criaTrilha(admin);
         TrilhaAtribuicao vencida = criaProgresso(trilha, admin, StatusAtribuicao.EM_ANDAMENTO);
-        vencida.setPrazo(LocalDate.now().minusDays(1));
+        vencida.setPrazo(LocalDate.now(ClockConfig.FUSO).minusDays(1));
         trilhaAtribuicaoRepository.saveAndFlush(vencida);
         String token = tokenDe(admin);
 

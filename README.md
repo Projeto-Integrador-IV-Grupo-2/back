@@ -281,6 +281,47 @@ permitido (vira `CONCLUIDA`).
 
 ---
 
+## Conteúdos, etapas e progresso por etapa
+
+Material de estudo das trilhas. Os vídeos ficam hospedados no **Vimeo**: a API
+guarda só o link e, ao salvar, consulta o **oEmbed público do Vimeo** (sem chave
+de API) para validar o link e preencher duração e miniatura.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/categorias` | autenticado | Lista paginada das categorias (`?nome=`, `?incluirInativas=true`) |
+| `POST /api/categorias` | `ADMIN`, `GESTOR` | Cria uma categoria (nome único por tenant) |
+| `PUT /api/categorias/{id}` | `ADMIN`, `GESTOR` | Edita nome e descrição |
+| `GET /api/conteudos` | autenticado | Lista paginada; filtros `titulo`, `categoriaId`, `areaId`, `tipo`, `status`. Colaborador só vê `PUBLICADO` |
+| `GET /api/conteudos/{id}` | autenticado | Detalha um conteúdo (rascunho responde 404 ao colaborador) |
+| `POST /api/conteudos` | `ADMIN`, `GESTOR` | Cria em rascunho. `VIDEO` exige `videoUrl`, `TEXTO` exige `corpo`, `LINK` exige `linkUrl` |
+| `PUT /api/conteudos/{id}` | `ADMIN`, `GESTOR` | Edita (o Vimeo só é consultado de novo se o link mudar) |
+| `PATCH /api/conteudos/{id}/publicar` | `ADMIN`, `GESTOR` | Publica — passa a aparecer para os colaboradores |
+| `GET /api/trilhas/{id}/etapas` | autenticado | Etapas em ordem, com `concluida` para o usuário autenticado |
+| `POST /api/trilhas/{id}/etapas` | `ADMIN`, `GESTOR` | Adiciona etapa (conteúdo publicado) no fim da trilha |
+| `PUT /api/trilhas/{id}/etapas/{etapaId}` | `ADMIN`, `GESTOR` | Troca conteúdo, título ou descrição |
+| `DELETE /api/trilhas/{id}/etapas/{etapaId}` | `ADMIN`, `GESTOR` | Remove a etapa e o progresso registrado nela; as seguintes sobem uma posição |
+| `PATCH /api/trilhas/{id}/etapas/ordem` | `ADMIN`, `GESTOR` | `{"etapaIds": [...]}` com todas as etapas na nova ordem |
+| `POST /api/trilhas/{id}/etapas/{etapaId}/concluir` | autenticado | Conclui a etapa para o **próprio** usuário e devolve o progresso recalculado |
+
+Link do Vimeo inválido, privado ou fora do domínio `vimeo.com` responde **400**
+com o erro em `fieldErrors[].field = "videoUrl"`; Vimeo fora do ar responde
+**502**.
+
+**Percentual:** `etapas concluídas / total de etapas` (arredondado para baixo),
+gravado em `trilha_atribuicao.percentual`. Quem recalcula é o
+`RecalculoDeProgressoListener`, que escuta `EtapaConcluidaEvent` e
+`EtapasDaTrilhaAlteradasEvent`:
+
+- concluir a última etapa conclui a trilha;
+- adicionar uma etapa reduz o percentual de quem está em andamento;
+- remover uma etapa remove o progresso dela e recalcula;
+- trilha já concluída permanece concluída (e sempre aparece com 100%).
+
+`AreaResponse.totalConteudos` conta os conteúdos com `conteudo.area_id` da área.
+
+---
+
 ## Acompanhamento das trilhas
 
 Para gestor e admin acompanharem o andamento dos colaboradores. Colaborador
@@ -409,6 +450,8 @@ define-se a variável e ela prevalece.
 | `DB_USERNAME` | `nexo` | Usuário do banco |
 | `DB_PASSWORD` | `nexo` | Senha do banco |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Origens do frontend liberadas no CORS (separadas por vírgula) |
+| `VIMEO_OEMBED_URL` | `https://vimeo.com/api/oembed.json` | Endpoint de oEmbed usado para validar os vídeos (público, sem chave) |
+| `VIMEO_TIMEOUT` | `PT5S` | Tempo máximo de espera pela resposta do Vimeo |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
@@ -471,6 +514,14 @@ do PR. O workflow **não usa segredos**.
 | V3 | `V3__create_user_profiles.sql` | Enum `papel_usuario` (`ADMIN`, `GESTOR`, `COLABORADOR`) |
 | V4 | `V4__create_users.sql` | Tabela `usuario` + índices de login e de filtro |
 | V5 | `V5__seed_initial_admin.sql` | Semeia o tenant `nexo` e o admin `admin@nexo.com` (idempotente) |
+| V6 | `V6__create_trilha.sql` | Tabela `trilha` |
+| V7 | `V7__create_trilha_atribuicao.sql` | Enum `status_atribuicao` e tabela `trilha_atribuicao` |
+| V8 | `V8__alter_area_add_descricao_auditoria.sql` | Descrição e auditoria em `area` |
+| V9 | `V9__create_competencia_e_pdi.sql` | Tabelas `competencia`, `pdi`, `pdi_item` e `pdi_acao` |
+| V10 | `V10__create_categoria.sql` | Tabela `categoria` (nome único por tenant) |
+| V11 | `V11__create_conteudo.sql` | Enums `tipo_conteudo`/`status_conteudo` e tabela `conteudo` (com `video_url` e `duracao_segundos`) |
+| V12 | `V12__create_trilha_etapa_e_progresso.sql` | Tabelas `trilha_etapa` (ordem única por trilha) e `etapa_progresso` |
+| V13 | `V13__alter_trilha_atribuicao_add_percentual.sql` | Coluna `percentual` em `trilha_atribuicao` |
 
 Regras do modelo que o código precisa respeitar:
 

@@ -19,6 +19,9 @@ public interface TrilhaAtribuicaoRepository
 
     List<TrilhaAtribuicao> findByTenantIdAndUsuarioId(UUID tenantId, UUID usuarioId);
 
+    /** Quem ainda não concluiu a trilha — os afetados quando as etapas dela mudam. */
+    List<TrilhaAtribuicao> findByTrilhaIdAndStatusNot(UUID trilhaId, StatusAtribuicao status);
+
     /**
      * Atribuições com prazo vencido que ainda não foram concluídas nem marcadas
      * — a entrada da rotina diária de atraso. Deixar {@code ATRASADA} fora do
