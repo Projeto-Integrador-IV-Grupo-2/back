@@ -1,15 +1,16 @@
 # Nexo — Back-end (API)
 
-API do projeto Nexo. Este repositório contém a **estrutura base** do back-end:
-já roda localmente e está pronta para receber os módulos de **autenticação** e
-**usuários**.
+API do projeto Nexo para centralizar conhecimento corporativo e trilhas de
+aprendizagem. O back-end inclui autenticação JWT, gestão de usuários e catálogo,
+trilhas com etapas e progresso, PDI, histórico de interações e endpoints de
+dashboards.
 
 
 ## Tecnologias
 
 | Camada | O que usamos | Versão |
 |---|---|---|
-| Linguagem | Java | 21 |
+| Linguagem | Java | 17 |
 | Framework | Spring Boot | 3.4 |
 | Web / REST | Spring Web (MVC) | — |
 | Banco de dados | PostgreSQL | 16 |
@@ -49,11 +50,21 @@ Links: [JDK 17 (Temurin)](https://adoptium.net/temurin/releases/?version=17) ·
 Tenha o **Docker Desktop aberto** e o **JDK 17** instalado
 (ver [O que instalar](#o-que-instalar)).
 
-Abra um terminal na pasta do projeto e rode **os dois comandos, nesta ordem**:
+Abra um terminal na pasta do projeto e rode **os dois comandos, nesta ordem**.
+O perfil `dev` precisa ser escolhido explicitamente; a aplicação não ativa um
+perfil de desenvolvimento automaticamente.
 
 ```bash
-docker compose up -d       # 1. liga o banco de dados
-./mvnw spring-boot:run     # 2. liga a API (fica rodando neste terminal)
+docker compose up -d
+SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+```
+
+No PowerShell do Windows, use:
+
+```powershell
+docker compose up -d
+$env:SPRING_PROFILES_ACTIVE = "dev"
+.\mvnw.cmd spring-boot:run
 ```
 
 Pronto. A API está em **http://localhost:8080**.
@@ -150,7 +161,7 @@ o token e o envia em toda requisição no cabeçalho
 
 | Endpoint | Acesso | O que faz |
 |---|---|---|
-| `POST /api/auth/login` | público | Recebe `{ "email", "senha" }` e devolve o token + os dados do usuário |
+| `POST /api/auth/login` | público | Recebe `{ "email", "senha", "tenantSubdominio?" }` e devolve o token + os dados do usuário |
 | `GET /api/auth/me` | autenticado | Devolve o usuário dono do token |
 
 Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
@@ -163,7 +174,7 @@ e um colaborador recebe `403` nelas.
 # 1. login (administrador inicial, apenas em dev/test)
 curl -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@nexo.com","senha":"admin123"}'
+  -d '{"email":"admin@nexo.com","senha":"admin123","tenantSubdominio":"nexo"}'
 
 # 2. usar o token devolvido
 curl http://localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'
@@ -184,9 +195,17 @@ que não corresponde a nenhuma senha conhecida. Quem define a senha acima é
 real. Em produção, a senha do administrador precisa ser definida fora do
 versionamento.
 
+Quando o mesmo e-mail existir em empresas diferentes, `tenantSubdominio` é
+obrigatório; sem ele o login é recusado para evitar resolver uma identidade
+ambígua. E-mails e subdomínios são comparados sem diferenciar maiúsculas e
+minúsculas. O JWT usa o UUID do usuário como `subject`; a cada requisição a API
+recarrega usuário, perfil e tenant do banco, sem confiar no e-mail/tenant
+copiados para as claims.
+
 Respostas de erro seguem o mesmo formato do resto da API: **401** quando falta
 token ou as credenciais não conferem, **403** para usuário inativo ou sem
-permissão.
+permissão. Um tenant desativado também invalida tokens já emitidos na próxima
+requisição autenticada.
 
 ---
 
@@ -238,6 +257,7 @@ Catálogo de trilhas de aprendizagem e o progresso de cada colaborador nelas.
 | `GET /api/trilhas/{id}/progresso` | autenticado | Progresso do usuário (404 se ainda não iniciou) |
 | `POST /api/trilhas/{id}/progresso` | autenticado | Inicia a trilha para o usuário (idempotente) |
 | `PATCH /api/trilhas/{id}/progresso` | autenticado | Muda o status do próprio progresso |
+| `POST /api/trilhas/{id}/progresso/concluir` | autenticado | Conclui o próprio progresso explicitamente |
 
 Consulta e progresso são abertos a qualquer autenticado: quem impede ver trilha
 de outra empresa é o filtro por tenant no service, e o dono do progresso é
@@ -343,6 +363,39 @@ implementação de `ExportadorAcompanhamento`, sem mudar o controller (a
 
 ---
 
+
+## Histórico de interações e dashboards
+
+A API registra eventos após a transação principal da trilha confirmar. A gravação
+do histórico usa uma transação independente; se a persistência da auditoria
+falhar, o erro é registrado no log e não derruba a requisição de trilha. Isso
+protege a operação principal, mas significa que uma falha de banco pode deixar
+uma lacuna no histórico — monitore os logs para detectar esses casos.
+
+| Endpoint | Acesso | O que entrega |
+|---|---|---|
+| `GET /api/historico` | autenticado | Histórico paginado; `ADMIN` vê o tenant inteiro, outros perfis veem apenas seus registros |
+| `GET /api/dashboard/colaborador` | `COLABORADOR` | Trilhas por status, prazos dos próximos sete dias, média do percentual real de progresso e dez atividades recentes |
+| `GET /api/dashboard/gestao` | `ADMIN`, `GESTOR` | Trilhas ativas, atribuições por status efetivo, taxa de conclusão, áreas com mais atrasos e trilhas mais iniciadas |
+
+Os três eventos auditados são `TRILHA_ACESSADA`, `TRILHA_INICIADA` e
+`TRILHA_CONCLUIDA`. A coluna opcional `conteudo_id` está disponível para
+interações futuras ligadas diretamente a um conteúdo (a tabela `conteudo` já
+existe); `sessao_id` continua adiado até existir a tabela de sessões. O histórico
+é isolado por tenant na consulta e também por chaves estrangeiras compostas no banco. O endpoint de gestão responde **403** a
+colaboradores. A paginação do histórico limita páginas a 100 registros e
+recusa offsets superiores a 100.000 para evitar consultas arbitrariamente
+profundas.
+
+A taxa de conclusão é calculada a partir das atribuições concluídas. O
+percentual médio do colaborador usa `trilha_atribuicao.percentual`, recalculado
+pelas etapas reais; uma trilha concluída é exibida como 100%. “Trilhas mais
+iniciadas” conta eventos `TRILHA_INICIADA` registrados a partir da implantação
+desta funcionalidade; não é possível reconstruir inícios anteriores sem dados
+históricos equivalentes.
+
+---
+
 ## PDI (Plano de Desenvolvimento Individual)
 
 O PDI vive dentro das trilhas: cada competência do plano tem ações, e a ação do
@@ -442,7 +495,10 @@ define-se a variável e ela prevalece.
 
 | Variável | Default (dev) | Descrição |
 |---|---|---|
-| `SPRING_PROFILES_ACTIVE` | `dev` | Perfil ativo (`dev` ou `test`) |
+| `SPRING_PROFILES_ACTIVE` | sem default | Selecione explicitamente `dev` para uso local; `test` é ativado pelos testes |
+| `JWT_SECRET` | Chave local apenas no perfil `dev`; obrigatório fora de `dev`/`test` | Chave de assinatura JWT com pelo menos 32 caracteres; não reutilize a chave de desenvolvimento em produção |
+| `JWT_ISSUER` | `nexo-api` | Emissor exigido na validação dos tokens |
+| `JWT_EXPIRATION` | `PT2H` | Validade do token em formato ISO-8601 |
 | `SERVER_PORT` | `8080` | Porta HTTP da API |
 | `DB_HOST` | `localhost` | Host do PostgreSQL |
 | `DB_PORT` | `5432` | Porta do PostgreSQL |
@@ -518,10 +574,22 @@ do PR. O workflow **não usa segredos**.
 | V7 | `V7__create_trilha_atribuicao.sql` | Enum `status_atribuicao` e tabela `trilha_atribuicao` |
 | V8 | `V8__alter_area_add_descricao_auditoria.sql` | Descrição e auditoria em `area` |
 | V9 | `V9__create_competencia_e_pdi.sql` | Tabelas `competencia`, `pdi`, `pdi_item` e `pdi_acao` |
-| V10 | `V10__create_categoria.sql` | Tabela `categoria` (nome único por tenant) |
-| V11 | `V11__create_conteudo.sql` | Enums `tipo_conteudo`/`status_conteudo` e tabela `conteudo` (com `video_url` e `duracao_segundos`) |
-| V12 | `V12__create_trilha_etapa_e_progresso.sql` | Tabelas `trilha_etapa` (ordem única por trilha) e `etapa_progresso` |
-| V13 | `V13__alter_trilha_atribuicao_add_percentual.sql` | Coluna `percentual` em `trilha_atribuicao` |
+| V10 | `V10__create_categoria.sql` | Tabela `categoria` |
+| V11 | `V11__create_conteudo.sql` | Tabela `conteudo` |
+| V12 | `V12__create_trilha_etapa_e_progresso.sql` | Tabelas `trilha_etapa` e `etapa_progresso` |
+| V13 | `V13__alter_trilha_atribuicao_add_percentual.sql` | Percentual real de progresso por etapas na atribuição |
+| V14 | `V14__enforce_tenant_relationships.sql` | Chaves estrangeiras compostas para impedir relações entre tenants diferentes |
+| V15 | `V15__enforce_case_insensitive_login.sql` | Índices para login sem diferenciar maiúsculas e restrição de subdomínios repetidos |
+| V16 | `V16__create_historico_interacao.sql` | Histórico de interações de trilhas, com detalhes JSONB e integridade por tenant |
+| V17 | `V17__track_trilha_start.sql` | Instante de início da atribuição, para auditar a primeira transição sem duplicar eventos |
+| V18 | `V18__add_conteudo_to_historico.sql` | Referência opcional de conteúdo no histórico, com integridade por tenant |
+
+**Atenção ao atualizar um banco que já contém dados:** as migrations V14 e V15
+validam as relações entre tenants e as duplicidades de e-mail/subdomínio sem
+diferenciar maiúsculas. Se encontrarem dados inconsistentes, o Flyway interrompe
+a migração de propósito; corrija esses registros antes de subir a nova versão.
+E-mails iguais continuam permitidos em tenants diferentes, mas não dentro do
+mesmo tenant (considerando maiúsculas/minúsculas).
 
 Regras do modelo que o código precisa respeitar:
 

@@ -9,6 +9,7 @@ import com.nexo.entity.Area;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
+import com.nexo.event.TrilhaAcessadaEvent;
 import com.nexo.event.TrilhaInativadaEvent;
 import com.nexo.exception.NomeDuplicadoException;
 import com.nexo.exception.OperacaoNaoPermitidaException;
@@ -136,6 +137,10 @@ public class TrilhaService {
     public TrilhaDetalheResponse buscarDetalhe(UUID trilhaId, UsuarioAutenticado requisitante) {
         Trilha trilha = buscarEntidadeNoTenant(trilhaId, requisitante.getTenantId());
         ProgressoTrilhaResponse progresso = trilhaAtribuicaoService.buscarProgressoOuNaoIniciado(trilha, requisitante);
+        // Publica apenas depois de resolver a trilha dentro do tenant autenticado.
+        // O listener persiste o histórico após o commit e absorve falhas de auditoria.
+        publisher.publishEvent(new TrilhaAcessadaEvent(
+                trilha.getId(), trilha.getNome(), trilha.getTenant().getId(), requisitante.getId()));
         return TrilhaDetalheResponse.de(trilha, comStatusEfetivo(progresso));
     }
 
@@ -185,7 +190,7 @@ public class TrilhaService {
 
         Usuario autor = usuarioRepository.findById(requisitante.getId())
                 .orElseThrow(() -> new IllegalStateException(
-                        "Usuário autenticado não encontrado na base: " + requisitante.getEmail()));
+                        "Usuário autenticado não encontrado na base: " + requisitante.getId()));
 
         Trilha trilha = new Trilha();
         trilha.setTenant(autor.getTenant());

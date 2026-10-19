@@ -11,6 +11,7 @@ import com.nexo.entity.Usuario;
 import com.nexo.event.AtribuicaoAtrasadaEvent;
 import com.nexo.event.TrilhaAtribuidaEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
+import com.nexo.event.TrilhaIniciadaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
@@ -149,9 +150,14 @@ public class TrilhaAtribuicaoService {
     @Transactional
     public ProgressoTrilhaResponse iniciar(UUID trilhaId, UsuarioAutenticado requisitante) {
         Trilha trilha = buscarTrilhaNoTenant(trilhaId, requisitante.getTenantId());
-        return trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId())
-                .map(this::comecarSeAindaNaoComecou)
-                .orElseGet(() -> responder(criarProgresso(trilha, requisitante)));
+        var existente = trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId());
+        if (!trilha.isAtivo() && existente.isEmpty()) {
+            throw new OperacaoNaoPermitidaException("Trilha inativa não pode ser iniciada sem uma atribuição existente");
+        }
+        if (existente.isPresent()) {
+            return comecarSeAindaNaoComecou(existente.get());
+        }
+        return responder(criarProgresso(trilha, requisitante));
     }
 
     /** Atualiza o status do progresso já existente do requisitante na trilha. */
@@ -159,8 +165,10 @@ public class TrilhaAtribuicaoService {
     public ProgressoTrilhaResponse atualizar(UUID trilhaId, AtualizarProgressoRequest request,
                                               UsuarioAutenticado requisitante) {
         TrilhaAtribuicao progresso = buscarProgressoDoRequisitante(trilhaId, requisitante);
+        boolean concluirAgora = progresso.getStatus() != StatusAtribuicao.CONCLUIDA
+                && request.status() == StatusAtribuicao.CONCLUIDA;
         aplicarStatus(progresso, request.status());
-        return responder(gravar(progresso));
+        return responder(gravar(progresso, concluirAgora));
     }
 
     /**
@@ -171,8 +179,9 @@ public class TrilhaAtribuicaoService {
     @Transactional
     public ProgressoTrilhaResponse concluir(UUID trilhaId, UsuarioAutenticado requisitante) {
         TrilhaAtribuicao progresso = buscarProgressoDoRequisitante(trilhaId, requisitante);
+        boolean concluirAgora = progresso.getStatus() != StatusAtribuicao.CONCLUIDA;
         aplicarStatus(progresso, StatusAtribuicao.CONCLUIDA);
-        return responder(gravar(progresso));
+        return responder(gravar(progresso, concluirAgora));
     }
 
     /** Busca o progresso do requisitante na trilha. Nunca cria — use {@link #iniciar} para isso. */
@@ -217,11 +226,18 @@ public class TrilhaAtribuicaoService {
      * estava em andamento.</p>
      */
     private ProgressoTrilhaResponse comecarSeAindaNaoComecou(TrilhaAtribuicao atribuicao) {
-        if (atribuicao.getStatus() != StatusAtribuicao.NAO_INICIADA) {
+        if (atribuicao.getStatus() == StatusAtribuicao.CONCLUIDA) {
             return responder(atribuicao);
         }
-        atribuicao.setStatus(StatusAtribuicao.EM_ANDAMENTO);
-        return responder(trilhaAtribuicaoRepository.saveAndFlush(atribuicao));
+        boolean precisaRegistrarInicio = atribuicao.getIniciadoEm() == null;
+        boolean estadoMudou = atribuicao.getStatus() == StatusAtribuicao.NAO_INICIADA;
+        if (estadoMudou) {
+            atribuicao.setStatus(StatusAtribuicao.EM_ANDAMENTO);
+        }
+        if (estadoMudou || precisaRegistrarInicio) {
+            return responder(gravar(atribuicao, false));
+        }
+        return responder(atribuicao);
     }
 
     /** Toda resposta sai daqui, para nenhuma leitura escapar da regra de prazo. */
@@ -270,9 +286,21 @@ public class TrilhaAtribuicaoService {
      * Grava e, se a trilha ficou concluída, avisa quem se interessa
      * ({@link TrilhaConcluidaEvent} — ex.: o PDI conclui a ação ligada a ela).
      */
-    private TrilhaAtribuicao gravar(TrilhaAtribuicao progresso) {
+    private TrilhaAtribuicao gravar(TrilhaAtribuicao progresso, boolean publicarConclusao) {
+        // iniciado_em permite detectar a primeira transição de início mesmo
+        // quando o status persistido virou ATRASADA pela rotina diária.
+        boolean primeiroInicio = progresso.getIniciadoEm() == null
+                && progresso.getStatus() != StatusAtribuicao.NAO_INICIADA;
+        if (primeiroInicio) {
+            progresso.setIniciadoEm(OffsetDateTime.now());
+        }
         TrilhaAtribuicao gravado = trilhaAtribuicaoRepository.saveAndFlush(progresso);
-        if (gravado.getStatus() == StatusAtribuicao.CONCLUIDA) {
+        if (primeiroInicio) {
+            publisher.publishEvent(new TrilhaIniciadaEvent(
+                    gravado.getTrilha().getId(), gravado.getTrilha().getNome(),
+                    gravado.getTenant().getId(), gravado.getUsuario().getId()));
+        }
+        if (publicarConclusao && gravado.getStatus() == StatusAtribuicao.CONCLUIDA) {
             publisher.publishEvent(new TrilhaConcluidaEvent(
                     gravado.getTenant().getId(),
                     gravado.getTrilha().getId(),
@@ -287,7 +315,7 @@ public class TrilhaAtribuicaoService {
         // Auto-início: quem atribui é o próprio usuário.
         TrilhaAtribuicao progresso = TrilhaAtribuicao.nova(
                 trilha, usuarioRef, usuarioRef, resolverPrazo(null, trilha), StatusAtribuicao.EM_ANDAMENTO);
-        return trilhaAtribuicaoRepository.saveAndFlush(progresso);
+        return gravar(progresso, false);
     }
 
     private TrilhaAtribuicao buscarProgressoDoRequisitante(UUID trilhaId, UsuarioAutenticado requisitante) {
@@ -317,9 +345,20 @@ public class TrilhaAtribuicaoService {
             throw new OperacaoNaoPermitidaException(
                     "Não é possível voltar um progresso já iniciado para NAO_INICIADA");
         }
+        if (novoStatus == StatusAtribuicao.ATRASADA) {
+            throw new OperacaoNaoPermitidaException(
+                    "ATRASADA é determinado pelo prazo e não pode ser definido manualmente");
+        }
+        StatusAtribuicao statusAnterior = progresso.getStatus();
         progresso.setStatus(novoStatus);
-        // Regressão de status (ex.: reabrir uma trilha concluída) invalida a
-        // data de conclusão anterior — senão ficaria "concluída" com data velha.
-        progresso.setConcluidoEm(novoStatus == StatusAtribuicao.CONCLUIDA ? OffsetDateTime.now() : null);
+        // Repetir a conclusão é idempotente e preserva a data original.
+        // Regressão para outro estado invalida a conclusão anterior.
+        if (novoStatus == StatusAtribuicao.CONCLUIDA) {
+            if (statusAnterior != StatusAtribuicao.CONCLUIDA || progresso.getConcluidoEm() == null) {
+                progresso.setConcluidoEm(OffsetDateTime.now());
+            }
+        } else {
+            progresso.setConcluidoEm(null);
+        }
     }
 }

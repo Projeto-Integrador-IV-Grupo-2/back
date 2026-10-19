@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,9 +20,9 @@ import org.springframework.stereotype.Service;
  * Emite e valida os tokens JWT de acesso da API.
  *
  * <p>O token é assinado em HMAC-SHA com a chave de {@code app.jwt.secret} e
- * carrega, além do identificador do usuário no {@code subject}, o e-mail, o
- * papel e o tenant — dados que o filtro usa para reconstruir a autenticação sem
- * ir ao banco a cada requisição.</p>
+ * carrega o identificador do usuário no {@code subject}. O filtro usa o subject
+ * assinado para recarregar o usuário e suas permissões atuais do banco; os dados
+ * redundantes do token nunca definem o tenant nem o papel autorizado.</p>
  */
 @Service
 public class JwtService {
@@ -78,7 +79,19 @@ public class JwtService {
         }
     }
 
-    /** E-mail do dono do token, quando o token é válido. */
+    /** UUID do usuário extraído do subject assinado, quando o token é válido. */
+    public Optional<UUID> extrairUsuarioId(String token) {
+        return validar(token).flatMap(claims -> {
+            try {
+                return Optional.of(UUID.fromString(claims.getSubject()));
+            } catch (IllegalArgumentException | NullPointerException ex) {
+                log.debug("Subject JWT rejeitado: {}", ex.getMessage());
+                return Optional.empty();
+            }
+        });
+    }
+
+    /** E-mail do dono do token, útil para diagnóstico, nunca para autorizar acesso. */
     public Optional<String> extrairEmail(String token) {
         return validar(token).map(claims -> claims.get(CLAIM_EMAIL, String.class));
     }

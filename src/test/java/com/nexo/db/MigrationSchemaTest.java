@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,7 +14,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Valida, contra um PostgreSQL real (Testcontainers, perfil {@code test}), que
- * as migrations Flyway V1..V5 produzem o schema esperado:
+ * as migrations Flyway produzem o schema esperado:
  *
  * <ul>
  *   <li>rodam em banco vazio (se falhassem, o contexto nem subia);</li>
@@ -76,7 +77,7 @@ class MigrationSchemaTest {
     void emailDuplicadoNoMesmoTenantEhRejeitadoPeloBanco() {
         assertThrows(DataIntegrityViolationException.class, () -> jdbc.update(
                 "INSERT INTO usuario (tenant_id, nome_completo, email, senha_hash, papel) "
-                        + "SELECT t.id, 'Duplicado', 'admin@nexo.com', '" + BCRYPT_HASH + "', 'COLABORADOR' "
+                        + "SELECT t.id, 'Duplicado', 'ADMIN@nexo.com', '" + BCRYPT_HASH + "', 'COLABORADOR' "
                         + "FROM tenant t WHERE t.subdominio = 'nexo'"));
     }
 
@@ -86,6 +87,51 @@ class MigrationSchemaTest {
                 "INSERT INTO usuario (tenant_id, nome_completo, email, senha_hash, papel) "
                         + "SELECT t.id, 'Texto Puro', 'texto.puro@nexo.com', 'senha-em-texto-puro', 'COLABORADOR' "
                         + "FROM tenant t WHERE t.subdominio = 'nexo'"));
+    }
+
+    @Test
+    void historicoNaoPodeReferenciarConteudoDeOutroTenant() {
+        UUID tenantPrincipal = jdbc.queryForObject(
+                "SELECT tenant_id FROM usuario WHERE email = 'admin@nexo.com'", UUID.class);
+        UUID adminId = jdbc.queryForObject(
+                "SELECT id FROM usuario WHERE email = 'admin@nexo.com'", UUID.class);
+        String sufixo = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        UUID tenantOutro = null;
+        UUID usuarioOutro = null;
+        UUID conteudoOutro = null;
+        try {
+            tenantOutro = jdbc.queryForObject(
+                    "INSERT INTO tenant (nome, subdominio) VALUES (?, ?) RETURNING id",
+                    UUID.class, "Tenant conteúdo " + sufixo, "conteudo-" + sufixo);
+            usuarioOutro = jdbc.queryForObject(
+                    "INSERT INTO usuario (tenant_id, nome_completo, email, senha_hash, papel) "
+                            + "VALUES (?, ?, ?, ?, 'COLABORADOR') RETURNING id",
+                    UUID.class, tenantOutro, "Usuário conteúdo", "conteudo-" + sufixo + "@empresa.com",
+                    BCRYPT_HASH);
+            conteudoOutro = jdbc.queryForObject(
+                    "INSERT INTO conteudo (tenant_id, titulo, tipo, corpo, criado_por) "
+                            + "VALUES (?, ?, 'TEXTO'::tipo_conteudo, ?, ?) RETURNING id",
+                    UUID.class, tenantOutro, "Conteúdo isolado", "Texto de teste", usuarioOutro);
+
+            UUID finalConteudoOutro = conteudoOutro;
+            assertThrows(DataIntegrityViolationException.class, () -> jdbc.update(
+                    "INSERT INTO historico_interacao (tenant_id, usuario_id, conteudo_id, tipo, detalhes) "
+                            + "VALUES (?, ?, ?, 'TRILHA_ACESSADA', '{}'::jsonb)",
+                    tenantPrincipal, adminId, finalConteudoOutro));
+        } finally {
+            if (conteudoOutro != null) {
+                // Também limpa a linha caso a constraint esteja ausente e a asserção falhe.
+                jdbc.update("DELETE FROM historico_interacao WHERE tenant_id = ? AND usuario_id = ? AND conteudo_id = ?",
+                        tenantPrincipal, adminId, conteudoOutro);
+                jdbc.update("DELETE FROM conteudo WHERE id = ?", conteudoOutro);
+            }
+            if (usuarioOutro != null) {
+                jdbc.update("DELETE FROM usuario WHERE id = ?", usuarioOutro);
+            }
+            if (tenantOutro != null) {
+                jdbc.update("DELETE FROM tenant WHERE id = ?", tenantOutro);
+            }
+        }
     }
 
     @Test
@@ -99,6 +145,29 @@ class MigrationSchemaTest {
                 "idx_usuario_papel",         // filtro por perfil
                 "idx_usuario_ativo",         // filtro por situação
                 "idx_usuario_tenant_area",   // filtro por departamento
-                "idx_usuario_tenant_cargo"); // filtro por cargo
+                "idx_usuario_tenant_cargo",  // filtro por cargo
+                "uq_usuario_tenant_email_ci",
+                "idx_usuario_email_ci");
+    }
+
+    @Test
+    void historicoTemDetalhesJsonbEChaveCompostaDeTenant() {
+        String tipoDetalhes = jdbc.queryForObject(
+                "SELECT data_type FROM information_schema.columns "
+                        + "WHERE table_name = 'historico_interacao' AND column_name = 'detalhes'",
+                String.class);
+        assertThat(tipoDetalhes).isEqualTo("jsonb");
+
+        List<String> colunas = jdbc.queryForList(
+                "SELECT column_name FROM information_schema.columns "
+                        + "WHERE table_name = 'historico_interacao'", String.class);
+        assertThat(colunas).contains("id", "tenant_id", "usuario_id", "conteudo_id", "tipo", "detalhes", "criado_em")
+                .doesNotContain("sessao_id");
+
+        List<String> constraints = jdbc.queryForList(
+                "SELECT conname FROM pg_constraint WHERE conrelid = 'historico_interacao'::regclass",
+                String.class);
+        assertThat(constraints).contains("fk_historico_usuario_tenant", "fk_historico_conteudo_tenant",
+                "ck_historico_interacao_tipo", "ck_historico_interacao_detalhes_objeto");
     }
 }

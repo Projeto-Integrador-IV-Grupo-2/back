@@ -138,6 +138,12 @@ public class TrilhaController {
         return trilhaAtribuicaoService.iniciar(id, usuario);
     }
 
+    @PostMapping("/{id}/progresso/concluir")
+    public ProgressoTrilhaResponse concluir(@PathVariable UUID id,
+                                            @AuthenticationPrincipal UsuarioAutenticado usuario) {
+        return trilhaAtribuicaoService.concluir(id, usuario);
+    }
+
     @PatchMapping("/{id}/progresso")
     public ProgressoTrilhaResponse atualizarProgresso(@PathVariable UUID id,
                                                       @Valid @RequestBody AtualizarProgressoRequest request,

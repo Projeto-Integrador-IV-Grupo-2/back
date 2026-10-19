@@ -5,6 +5,7 @@ import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.event.EtapaConcluidaEvent;
 import com.nexo.event.EtapasDaTrilhaAlteradasEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
+import com.nexo.event.TrilhaIniciadaEvent;
 import com.nexo.repository.EtapaProgressoRepository;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaEtapaRepository;
@@ -55,7 +56,8 @@ public class RecalculoDeProgressoListener {
     @EventListener
     public void aoConcluirEtapa(EtapaConcluidaEvent evento) {
         long total = trilhaEtapaRepository.countByTrilhaId(evento.trilhaId());
-        trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(evento.trilhaId(), evento.usuarioId())
+        trilhaAtribuicaoRepository.findByTrilhaIdAndTenantIdAndUsuarioId(
+                        evento.trilhaId(), evento.tenantId(), evento.usuarioId())
                 .ifPresent(atribuicao -> recalcular(atribuicao, total, evento.tenantId()));
     }
 
@@ -63,7 +65,8 @@ public class RecalculoDeProgressoListener {
     public void aoAlterarEtapas(EtapasDaTrilhaAlteradasEvent evento) {
         long total = trilhaEtapaRepository.countByTrilhaId(evento.trilhaId());
         trilhaAtribuicaoRepository
-                .findByTrilhaIdAndStatusNot(evento.trilhaId(), StatusAtribuicao.CONCLUIDA)
+                .findByTrilhaIdAndTenantIdAndStatusNot(
+                        evento.trilhaId(), evento.tenantId(), StatusAtribuicao.CONCLUIDA)
                 .forEach(atribuicao -> recalcular(atribuicao, total, evento.tenantId()));
     }
 
@@ -75,10 +78,19 @@ public class RecalculoDeProgressoListener {
                 atribuicao.getTrilha().getId(), atribuicao.getUsuario().getId());
         atribuicao.setPercentual(calculadora.percentual(concluidas, total));
 
+        boolean primeiroInicio = atribuicao.getIniciadoEm() == null && concluidas > 0;
+        if (primeiroInicio) {
+            atribuicao.setIniciadoEm(OffsetDateTime.now(clock));
+        }
+
         if (calculadora.completa(concluidas, total)) {
             atribuicao.setStatus(StatusAtribuicao.CONCLUIDA);
             atribuicao.setConcluidoEm(OffsetDateTime.now(clock));
             trilhaAtribuicaoRepository.save(atribuicao);
+            if (primeiroInicio) {
+                publisher.publishEvent(new TrilhaIniciadaEvent(atribuicao.getTrilha().getId(),
+                        atribuicao.getTrilha().getNome(), tenantId, atribuicao.getUsuario().getId()));
+            }
             publisher.publishEvent(new TrilhaConcluidaEvent(tenantId, atribuicao.getTrilha().getId(),
                     atribuicao.getUsuario().getId(), atribuicao.getConcluidoEm()));
             return;
@@ -87,5 +99,9 @@ public class RecalculoDeProgressoListener {
             atribuicao.setStatus(StatusAtribuicao.EM_ANDAMENTO);
         }
         trilhaAtribuicaoRepository.save(atribuicao);
+        if (primeiroInicio) {
+            publisher.publishEvent(new TrilhaIniciadaEvent(atribuicao.getTrilha().getId(),
+                    atribuicao.getTrilha().getNome(), tenantId, atribuicao.getUsuario().getId()));
+        }
     }
 }

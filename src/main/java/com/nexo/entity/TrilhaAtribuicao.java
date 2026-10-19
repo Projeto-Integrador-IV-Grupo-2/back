@@ -73,6 +73,9 @@ public class TrilhaAtribuicao {
     @Column(name = "concluido_em")
     private OffsetDateTime concluidoEm;
 
+    @Column(name = "iniciado_em")
+    private OffsetDateTime iniciadoEm;
+
     @Column(name = "percentual", nullable = false)
     private int percentual;
 
@@ -168,6 +171,14 @@ public class TrilhaAtribuicao {
 
     public void setConcluidoEm(OffsetDateTime concluidoEm) {
         this.concluidoEm = concluidoEm;
+    }
+
+    public OffsetDateTime getIniciadoEm() {
+        return iniciadoEm;
+    }
+
+    public void setIniciadoEm(OffsetDateTime iniciadoEm) {
+        this.iniciadoEm = iniciadoEm;
     }
 
     public int getPercentual() {

@@ -10,6 +10,7 @@
 -- idempotente e não deve ocupar um número de versão da sequência principal.
 --
 -- Senha: admin123
-UPDATE usuario
+UPDATE usuario AS u
 SET senha_hash = '$2a$10$iHhdXeodJCFtxLavXTxRceWAfxymZQrJnAPbcLH6ymHctFfVI8W9y'
-WHERE email = 'admin@nexo.com';
+WHERE lower(u.email) = 'admin@nexo.com'
+  AND u.tenant_id = (SELECT id FROM tenant WHERE lower(subdominio) = 'nexo');

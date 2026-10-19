@@ -27,4 +27,8 @@ public interface TrilhaRepository extends JpaRepository<Trilha, UUID>, JpaSpecif
      * sem renomear.
      */
     Optional<Trilha> findByTenantIdAndNomeIgnoreCase(UUID tenantId, String nome);
+
+    Optional<Trilha> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    long countByTenantIdAndAtivoTrue(UUID tenantId);
 }

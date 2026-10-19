@@ -42,8 +42,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
             extrairToken(request)
-                    .flatMap(jwtService::extrairEmail)
-                    .ifPresent(email -> autenticar(email, request));
+                    .flatMap(jwtService::extrairUsuarioId)
+                    .ifPresent(usuarioId -> autenticar(usuarioId, request));
         }
         chain.doFilter(request, response);
     }
@@ -57,9 +57,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return StringUtils.hasText(token) ? Optional.of(token) : Optional.empty();
     }
 
-    private void autenticar(String email, HttpServletRequest request) {
+    private void autenticar(java.util.UUID usuarioId, HttpServletRequest request) {
         try {
-            UserDetails usuario = userDetailsService.loadUserByUsername(email);
+            UserDetails usuario = userDetailsService.loadUserById(usuarioId);
             // O token continua válido, mas o usuário pode ter sido desativado depois de emitido.
             if (!usuario.isEnabled()) {
                 log.debug("Token válido de usuário inativo ignorado");

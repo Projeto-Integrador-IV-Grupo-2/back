@@ -7,12 +7,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.nexo.entity.StatusAtribuicao;
+import com.nexo.entity.Tenant;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
 import com.nexo.event.EtapaConcluidaEvent;
 import com.nexo.event.EtapasDaTrilhaAlteradasEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
+import com.nexo.event.TrilhaIniciadaEvent;
 import com.nexo.repository.EtapaProgressoRepository;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaEtapaRepository;
@@ -57,10 +59,17 @@ class RecalculoDeProgressoListenerTest {
         Clock clock = Clock.fixed(Instant.parse("2026-10-11T12:00:00Z"), ZoneId.of("America/Sao_Paulo"));
         listener = new RecalculoDeProgressoListener(trilhaAtribuicaoRepository, trilhaEtapaRepository,
                 etapaProgressoRepository, new CalculadoraDePercentual(), publisher, clock);
+        Tenant tenant = new Tenant();
+        ReflectionTestUtils.setField(tenant, "id", TENANT);
+
         trilha = new Trilha();
         ReflectionTestUtils.setField(trilha, "id", UUID.randomUUID());
+        trilha.setTenant(tenant);
+        trilha.setNome("Trilha de teste");
+
         usuario = new Usuario();
         ReflectionTestUtils.setField(usuario, "id", UUID.randomUUID());
+        usuario.setTenant(tenant);
     }
 
     @Test
@@ -86,19 +95,21 @@ class RecalculoDeProgressoListenerTest {
         assertThat(atribuicao.getPercentual()).isEqualTo(100);
         assertThat(atribuicao.getStatus()).isEqualTo(StatusAtribuicao.CONCLUIDA);
         assertThat(atribuicao.getConcluidoEm()).isNotNull();
+        assertThat(atribuicao.getIniciadoEm()).isNotNull();
 
         ArgumentCaptor<TrilhaConcluidaEvent> evento = ArgumentCaptor.forClass(TrilhaConcluidaEvent.class);
         verify(publisher).publishEvent(evento.capture());
         assertThat(evento.getValue()).isEqualTo(new TrilhaConcluidaEvent(
                 TENANT, trilha.getId(), usuario.getId(), atribuicao.getConcluidoEm()));
+        verify(publisher).publishEvent(any(TrilhaIniciadaEvent.class));
     }
 
     @Test
     void removerAUnicaEtapaPendenteConcluiATrilhaEAvisa() {
         TrilhaAtribuicao atribuicao = atribuicao(StatusAtribuicao.EM_ANDAMENTO);
         when(trilhaEtapaRepository.countByTrilhaId(trilha.getId())).thenReturn(2L);
-        when(trilhaAtribuicaoRepository.findByTrilhaIdAndStatusNot(trilha.getId(), StatusAtribuicao.CONCLUIDA))
-                .thenReturn(List.of(atribuicao));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndTenantIdAndStatusNot(
+                trilha.getId(), TENANT, StatusAtribuicao.CONCLUIDA)).thenReturn(List.of(atribuicao));
         when(etapaProgressoRepository.contarConcluidas(trilha.getId(), usuario.getId())).thenReturn(2L);
 
         listener.aoAlterarEtapas(new EtapasDaTrilhaAlteradasEvent(trilha.getId(), TENANT));
@@ -122,8 +133,8 @@ class RecalculoDeProgressoListenerTest {
         TrilhaAtribuicao atribuicao = atribuicao(StatusAtribuicao.EM_ANDAMENTO);
         atribuicao.setPercentual(50);
         when(trilhaEtapaRepository.countByTrilhaId(trilha.getId())).thenReturn(3L);
-        when(trilhaAtribuicaoRepository.findByTrilhaIdAndStatusNot(trilha.getId(), StatusAtribuicao.CONCLUIDA))
-                .thenReturn(List.of(atribuicao));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndTenantIdAndStatusNot(
+                trilha.getId(), TENANT, StatusAtribuicao.CONCLUIDA)).thenReturn(List.of(atribuicao));
         when(etapaProgressoRepository.contarConcluidas(trilha.getId(), usuario.getId())).thenReturn(1L);
 
         listener.aoAlterarEtapas(new EtapasDaTrilhaAlteradasEvent(trilha.getId(), TENANT));
@@ -136,8 +147,8 @@ class RecalculoDeProgressoListenerTest {
         TrilhaAtribuicao atribuicao = atribuicao(StatusAtribuicao.CONCLUIDA);
         atribuicao.setPercentual(100);
         when(trilhaEtapaRepository.countByTrilhaId(trilha.getId())).thenReturn(5L);
-        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilha.getId(), usuario.getId()))
-                .thenReturn(Optional.of(atribuicao));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndTenantIdAndUsuarioId(
+                trilha.getId(), TENANT, usuario.getId())).thenReturn(Optional.of(atribuicao));
 
         listener.aoConcluirEtapa(eventoDeConclusao());
 
@@ -149,8 +160,8 @@ class RecalculoDeProgressoListenerTest {
 
     private void quandoConcluiu(TrilhaAtribuicao atribuicao, long concluidas, long total) {
         when(trilhaEtapaRepository.countByTrilhaId(trilha.getId())).thenReturn(total);
-        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilha.getId(), usuario.getId()))
-                .thenReturn(Optional.of(atribuicao));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndTenantIdAndUsuarioId(
+                trilha.getId(), TENANT, usuario.getId())).thenReturn(Optional.of(atribuicao));
         when(etapaProgressoRepository.contarConcluidas(trilha.getId(), usuario.getId())).thenReturn(concluidas);
     }
 

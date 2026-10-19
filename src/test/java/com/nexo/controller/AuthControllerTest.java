@@ -78,7 +78,7 @@ class AuthControllerTest {
 
     @Test
     void administradorInicialEntraComASenhaDocumentada() throws Exception {
-        mockMvc.perform(login("admin@nexo.com", "admin123"))
+        mockMvc.perform(login("admin@nexo.com", "admin123", "nexo"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.usuario.papel").value("ADMIN"));
     }
@@ -111,6 +111,56 @@ class AuthControllerTest {
         mockMvc.perform(login(emailInativo, SENHA))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Usuário inativo"));
+    }
+
+
+    @Test
+    void loginExigeSubdominioQuandoEmailExisteEmMaisDeUmTenant() throws Exception {
+        String emailDuplicado = novoEmail();
+        Tenant tenantBase = tenantRepository.findBySubdominio("nexo").orElseThrow();
+        Usuario usuarioBase = criaUsuario(tenantBase, emailDuplicado, SENHA, true);
+
+        Tenant outroTenant = novoTenant("empresa-login");
+        Usuario usuarioOutroTenant = criaUsuario(outroTenant, emailDuplicado, SENHA, true);
+        try {
+            mockMvc.perform(login(emailDuplicado, SENHA))
+                    .andExpect(status().isUnauthorized());
+
+            mockMvc.perform(login(emailDuplicado, SENHA, outroTenant.getSubdominio()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.usuario.tenantId").value(outroTenant.getId().toString()));
+        } finally {
+            usuarioRepository.delete(usuarioOutroTenant);
+            usuarioRepository.flush();
+            tenantRepository.delete(outroTenant);
+            usuarioRepository.delete(usuarioBase);
+            usuarioRepository.flush();
+        }
+    }
+
+    @Test
+    void tokenJaEmitidoDeixaDeAutenticarQuandoTenantEInativado() throws Exception {
+        Tenant tenantTemporario = novoTenant("empresa-inativa");
+        String emailTemporario = novoEmail();
+        Usuario usuarioTemporario = criaUsuario(tenantTemporario, emailTemporario, SENHA, true);
+        try {
+            String corpo = mockMvc.perform(login(emailTemporario, SENHA, tenantTemporario.getSubdominio()))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+            String token = objectMapper.readValue(corpo, LoginResponse.class).token();
+
+            tenantTemporario.setAtivo(false);
+            tenantRepository.saveAndFlush(tenantTemporario);
+
+            mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                    .andExpect(status().isUnauthorized());
+        } finally {
+            usuarioRepository.delete(usuarioTemporario);
+            usuarioRepository.flush();
+            tenantRepository.delete(tenantTemporario);
+        }
     }
 
     @Test
@@ -147,13 +197,22 @@ class AuthControllerTest {
     }
 
     private MockHttpServletRequestBuilder login(String email, String senha) throws Exception {
+        return login(email, senha, null);
+    }
+
+    private MockHttpServletRequestBuilder login(String email, String senha, String tenantSubdominio)
+            throws Exception {
         return post("/api/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(new LoginRequest(email, senha)));
+                .content(objectMapper.writeValueAsString(new LoginRequest(email, senha, tenantSubdominio)));
     }
 
     private void criaUsuario(String email, String senha, boolean ativo) {
         Tenant tenant = tenantRepository.findBySubdominio("nexo").orElseThrow();
+        criaUsuario(tenant, email, senha, ativo);
+    }
+
+    private Usuario criaUsuario(Tenant tenant, String email, String senha, boolean ativo) {
         Usuario usuario = new Usuario();
         usuario.setTenant(tenant);
         usuario.setNomeCompleto(NOME);
@@ -161,7 +220,15 @@ class AuthControllerTest {
         usuario.setSenhaHash(passwordEncoder.encode(senha));
         usuario.setPapel(Perfil.COLABORADOR);
         usuario.setAtivo(ativo);
-        usuarioRepository.saveAndFlush(usuario);
+        return usuarioRepository.saveAndFlush(usuario);
+    }
+
+    private Tenant novoTenant(String prefixo) {
+        String sufixo = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        Tenant tenant = new Tenant();
+        tenant.setNome("Tenant " + prefixo + " " + sufixo);
+        tenant.setSubdominio(prefixo + "-" + sufixo);
+        return tenantRepository.saveAndFlush(tenant);
     }
 
     private static String novoEmail() {

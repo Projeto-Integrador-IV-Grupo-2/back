@@ -15,7 +15,6 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -59,9 +58,9 @@ public class AreaController {
     @PostMapping
     @PreAuthorize(GESTAO)
     public ResponseEntity<AreaResponse> criar(@Valid @RequestBody AreaRequest request,
-                                              Authentication authentication,
+                                              @AuthenticationPrincipal UsuarioAutenticado requisitante,
                                               UriComponentsBuilder uriBuilder) {
-        AreaResponse response = areaService.criar(request, authentication.getName());
+        AreaResponse response = areaService.criar(request, requisitante);
         URI location = uriBuilder.path("/api/areas/{id}").buildAndExpand(response.id()).toUri();
         return ResponseEntity.created(location).body(response);
     }
@@ -70,13 +69,13 @@ public class AreaController {
     public PagedModel<AreaResponse> listar(@RequestParam(required = false) String nome,
                                            @RequestParam(defaultValue = "false") boolean incluirInativas,
                                            @PageableDefault(size = 20, sort = "nome") Pageable pageable,
-                                           Authentication authentication) {
-        return new PagedModel<>(areaService.listar(nome, incluirInativas, pageable, authentication.getName()));
+                                           @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return new PagedModel<>(areaService.listar(nome, incluirInativas, pageable, requisitante));
     }
 
     @GetMapping("/{id}")
-    public AreaResponse buscarPorId(@PathVariable UUID id, Authentication authentication) {
-        return areaService.buscarPorId(id, authentication.getName());
+    public AreaResponse buscarPorId(@PathVariable UUID id, @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return areaService.buscarPorId(id, requisitante);
     }
 
     /** Trilhas ativas da área, com o progresso do usuário e os mesmos filtros de {@code GET /api/trilhas}. */
@@ -92,19 +91,19 @@ public class AreaController {
     @PreAuthorize(GESTAO)
     public AreaResponse atualizar(@PathVariable UUID id,
                                   @Valid @RequestBody AreaRequest request,
-                                  Authentication authentication) {
-        return areaService.atualizar(id, request, authentication.getName());
+                                  @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return areaService.atualizar(id, request, requisitante);
     }
 
     @PatchMapping("/{id}/inativar")
     @PreAuthorize(GESTAO)
-    public AreaResponse inativar(@PathVariable UUID id, Authentication authentication) {
-        return areaService.inativar(id, authentication.getName());
+    public AreaResponse inativar(@PathVariable UUID id, @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return areaService.inativar(id, requisitante);
     }
 
     @PatchMapping("/{id}/ativar")
     @PreAuthorize(GESTAO)
-    public AreaResponse ativar(@PathVariable UUID id, Authentication authentication) {
-        return areaService.ativar(id, authentication.getName());
+    public AreaResponse ativar(@PathVariable UUID id, @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return areaService.ativar(id, requisitante);
     }
 }
