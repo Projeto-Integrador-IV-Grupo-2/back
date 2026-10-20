@@ -14,8 +14,11 @@ import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
 import com.nexo.repository.CargoRepository;
 import com.nexo.repository.UsuarioFiltro;
+import com.nexo.repository.TenantRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.repository.UsuarioSpecifications;
+import com.nexo.security.UsuarioAutenticado;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -30,19 +33,16 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><strong>Isolamento por tenant:</strong> este é um sistema multi-tenant
  * (ver {@code Tenant}/{@code Usuario.tenant}). Todo método aqui recebe o
- * e-mail do administrador autenticado ({@code requisitanteEmail}) e resolve
- * o tenant a partir dele — nunca de um parâmetro vindo do cliente. Toda
+ * principal autenticado ({@code tenantId}) e resolve o tenant por UUID — nunca
+ * a partir de um e-mail que possa existir em empresas diferentes. Toda
  * consulta, criação e edição é restrita a esse tenant; buscar/editar um
  * usuário de outro tenant resulta em {@link ResourceNotFoundException}
  * (nunca 403), para não revelar a um administrador que aquele registro
  * existe em outra empresa.
  *
  * <p>Isso custa uma consulta extra por requisição (buscar o Usuario do
- * próprio requisitante para ler {@code getTenant()}) — embora o token JWT já
- * carregue o {@code tenantId} como claim (ver {@code JwtService}), este
- * serviço ainda recebe só o e-mail do requisitante. {@link #tenantDoRequisitante}
- * é o ponto único para trocar essa resolução por uma leitura direta da
- * autenticação, sem ida ao banco.</p>
+ * próprio requisitante para ler {@code getTenant()}); o UUID do tenant já vem
+ * do principal, cuja identidade é recarregada do banco a cada requisição.</p>
  */
 @Service
 public class UsuarioService {
@@ -51,21 +51,24 @@ public class UsuarioService {
     private final CargoRepository cargoRepository;
     private final AreaRepository areaRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TenantRepository tenantRepository;
 
     public UsuarioService(UsuarioRepository usuarioRepository,
                            CargoRepository cargoRepository,
                            AreaRepository areaRepository,
-                           PasswordEncoder passwordEncoder) {
+                           PasswordEncoder passwordEncoder,
+                           TenantRepository tenantRepository) {
         this.usuarioRepository = usuarioRepository;
         this.cargoRepository = cargoRepository;
         this.areaRepository = areaRepository;
         this.passwordEncoder = passwordEncoder;
+        this.tenantRepository = tenantRepository;
     }
 
     @Transactional
-    public UsuarioResponse criar(CriarUsuarioRequest request, String requisitanteEmail) {
-        Tenant tenant = tenantDoRequisitante(requisitanteEmail);
-        String email = request.email().trim().toLowerCase();
+    public UsuarioResponse criar(CriarUsuarioRequest request, UsuarioAutenticado requisitante) {
+        Tenant tenant = tenantDoRequisitante(requisitante);
+        String email = request.email().trim().toLowerCase(Locale.ROOT);
 
         if (usuarioRepository.existsByTenantIdAndEmailIgnoreCase(tenant.getId(), email)) {
             throw new EmailDuplicadoException(email);
@@ -97,21 +100,21 @@ public class UsuarioService {
     }
 
     @Transactional(readOnly = true)
-    public Page<UsuarioResponse> listar(UsuarioFiltro filtro, Pageable pageable, String requisitanteEmail) {
-        Tenant tenant = tenantDoRequisitante(requisitanteEmail);
+    public Page<UsuarioResponse> listar(UsuarioFiltro filtro, Pageable pageable, UsuarioAutenticado requisitante) {
+        Tenant tenant = tenantDoRequisitante(requisitante);
         Specification<Usuario> especificacao = UsuarioSpecifications.comFiltro(filtro)
                 .and((root, query, cb) -> cb.equal(root.get("tenant").get("id"), tenant.getId()));
         return usuarioRepository.findAll(especificacao, pageable).map(UsuarioResponse::from);
     }
 
     @Transactional(readOnly = true)
-    public UsuarioResponse buscarPorId(UUID id, String requisitanteEmail) {
-        return UsuarioResponse.from(buscarEntidadeNoTenant(id, requisitanteEmail));
+    public UsuarioResponse buscarPorId(UUID id, UsuarioAutenticado requisitante) {
+        return UsuarioResponse.from(buscarEntidadeNoTenant(id, requisitante));
     }
 
     @Transactional
-    public UsuarioResponse atualizar(UUID id, AtualizarUsuarioRequest request, String requisitanteEmail) {
-        Usuario usuario = buscarEntidadeNoTenant(id, requisitanteEmail);
+    public UsuarioResponse atualizar(UUID id, AtualizarUsuarioRequest request, UsuarioAutenticado requisitante) {
+        Usuario usuario = buscarEntidadeNoTenant(id, requisitante);
         usuario.setNomeCompleto(request.nomeCompleto().trim());
         usuario.setCargo(resolverCargo(request.cargoId(), usuario.getTenant()));
         usuario.setArea(resolverArea(request.areaId(), usuario.getTenant()));
@@ -125,14 +128,14 @@ public class UsuarioService {
     /**
      * Ativa ou desativa um usuário (soft delete via {@code Usuario.ativo}).
      * Um administrador nunca pode desativar a própria conta — a comparação é
-     * feita pelo e-mail do solicitante (identidade extraída da autenticação
-     * atual pelo controller), nunca por um campo vindo do corpo da requisição.
+     * feita pelo UUID do principal autenticado, nunca por e-mail nem por um
+     * campo vindo do corpo da requisição.
      */
     @Transactional
-    public UsuarioResponse atualizarSituacao(UUID id, SituacaoUsuario novaSituacao, String requisitanteEmail) {
-        Usuario usuario = buscarEntidadeNoTenant(id, requisitanteEmail);
+    public UsuarioResponse atualizarSituacao(UUID id, SituacaoUsuario novaSituacao, UsuarioAutenticado requisitante) {
+        Usuario usuario = buscarEntidadeNoTenant(id, requisitante);
 
-        if (novaSituacao == SituacaoUsuario.INATIVO && usuario.getEmail().equalsIgnoreCase(requisitanteEmail)) {
+        if (novaSituacao == SituacaoUsuario.INATIVO && requisitante.getId().equals(usuario.getId())) {
             throw new OperacaoNaoPermitidaException("Um administrador não pode desativar a própria conta");
         }
 
@@ -140,8 +143,8 @@ public class UsuarioService {
         return UsuarioResponse.from(usuarioRepository.saveAndFlush(usuario));
     }
 
-    private Usuario buscarEntidadeNoTenant(UUID id, String requisitanteEmail) {
-        Tenant tenant = tenantDoRequisitante(requisitanteEmail);
+    private Usuario buscarEntidadeNoTenant(UUID id, UsuarioAutenticado requisitante) {
+        Tenant tenant = tenantDoRequisitante(requisitante);
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado: " + id));
         if (!usuario.getTenant().getId().equals(tenant.getId())) {
@@ -150,11 +153,10 @@ public class UsuarioService {
         return usuario;
     }
 
-    private Tenant tenantDoRequisitante(String requisitanteEmail) {
-        return usuarioRepository.findByEmailIgnoreCase(requisitanteEmail)
-                .map(Usuario::getTenant)
+    private Tenant tenantDoRequisitante(UsuarioAutenticado requisitante) {
+        return tenantRepository.findById(requisitante.getTenantId())
                 .orElseThrow(() -> new IllegalStateException(
-                        "Usuário autenticado não encontrado na base: " + requisitanteEmail));
+                        "Tenant do usuário autenticado não encontrado: " + requisitante.getTenantId()));
     }
 
     private Cargo resolverCargo(UUID cargoId, Tenant tenant) {

@@ -17,6 +17,8 @@ public interface UsuarioRepository
 
     Optional<Usuario> findByEmailIgnoreCase(String email);
 
+    List<Usuario> findTop2ByEmailIgnoreCaseOrderByIdAsc(String email);
+
     Optional<Usuario> findByTenantIdAndEmailIgnoreCase(UUID tenantId, String email);
 
     boolean existsByEmailIgnoreCase(String email);

@@ -1,0 +1,65 @@
+package com.nexo.service;
+
+import com.nexo.entity.HistoricoInteracao;
+import com.nexo.entity.Tenant;
+import com.nexo.entity.TipoInteracaoHistorico;
+import com.nexo.entity.Usuario;
+import com.nexo.event.TrilhaAcessadaEvent;
+import com.nexo.event.TrilhaConcluidaEvent;
+import com.nexo.event.TrilhaIniciadaEvent;
+import com.nexo.repository.TenantRepository;
+import com.nexo.repository.TrilhaRepository;
+import com.nexo.repository.UsuarioRepository;
+import java.util.Map;
+import org.springframework.stereotype.Component;
+
+/** Converte eventos de domínio em registros persistíveis de histórico. */
+@Component
+public class HistoricoInteracaoFactory {
+
+    private final TenantRepository tenantRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final TrilhaRepository trilhaRepository;
+
+    public HistoricoInteracaoFactory(TenantRepository tenantRepository, UsuarioRepository usuarioRepository,
+                                     TrilhaRepository trilhaRepository) {
+        this.tenantRepository = tenantRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.trilhaRepository = trilhaRepository;
+    }
+
+    public HistoricoInteracao para(TrilhaAcessadaEvent evento) {
+        return criar(evento.trilhaId(), evento.trilhaNome(), evento.tenantId(), evento.usuarioId(),
+                TipoInteracaoHistorico.TRILHA_ACESSADA, "GET /api/trilhas/{id}");
+    }
+
+    public HistoricoInteracao para(TrilhaIniciadaEvent evento) {
+        return criar(evento.trilhaId(), evento.trilhaNome(), evento.tenantId(), evento.usuarioId(),
+                TipoInteracaoHistorico.TRILHA_INICIADA, "progresso alterado para EM_ANDAMENTO");
+    }
+
+    public HistoricoInteracao para(TrilhaConcluidaEvent evento) {
+        String trilhaNome = trilhaRepository.findByIdAndTenantId(evento.trilhaId(), evento.tenantId())
+                .map(com.nexo.entity.Trilha::getNome)
+                .orElse("Trilha removida");
+        return criar(evento.trilhaId(), trilhaNome, evento.tenantId(), evento.usuarioId(),
+                TipoInteracaoHistorico.TRILHA_CONCLUIDA, "progresso da trilha atualizado para CONCLUIDA");
+    }
+
+    private HistoricoInteracao criar(java.util.UUID trilhaId, String trilhaNome,
+                                     java.util.UUID tenantId, java.util.UUID usuarioId,
+                                     TipoInteracaoHistorico tipo, String origem) {
+        Tenant tenant = tenantRepository.getReferenceById(tenantId);
+        Usuario usuario = usuarioRepository.getReferenceById(usuarioId);
+
+        HistoricoInteracao historico = new HistoricoInteracao();
+        historico.setTenant(tenant);
+        historico.setUsuario(usuario);
+        historico.setTipo(tipo);
+        historico.setDetalhes(Map.of(
+                "trilhaId", trilhaId.toString(),
+                "trilhaNome", trilhaNome,
+                "origem", origem));
+        return historico;
+    }
+}

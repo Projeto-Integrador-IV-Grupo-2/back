@@ -27,7 +27,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.TestExecutionEvent;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.context.support.WithUserDetails;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,7 +75,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void administradorCadastraUsuarioERecebe201SemSenhaNaResposta() throws Exception {
         CriarUsuarioRequest request = novoRequestValido("joana.souza");
 
@@ -89,7 +92,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void payloadIncompletoRetorna400ComErroPorCampo() throws Exception {
         String payloadInvalido = """
                 {"nomeCompleto": "", "email": "email-invalido", "papel": "COLABORADOR"}
@@ -104,7 +108,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void senhaAbaixoDaPoliticaMinimaRetorna400() throws Exception {
         CriarUsuarioRequest request = new CriarUsuarioRequest(
                 "Usuario Teste", "senha.fraca." + UUID.randomUUID() + "@empresa.com",
@@ -118,7 +123,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void emailDuplicadoNoMesmoTenantRetorna409() throws Exception {
         CriarUsuarioRequest request = novoRequestValido("duplicado");
 
@@ -134,21 +140,24 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void idInexistenteRetorna404() throws Exception {
         mockMvc.perform(get("/api/usuarios/{id}", UUID.randomUUID()))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void idComFormatoInvalidoRetorna400EmVezDe500() throws Exception {
         mockMvc.perform(get("/api/usuarios/{id}", "nao-e-um-uuid"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void filtroDeListagemComValorInvalidoRetorna400EmVezDe500() throws Exception {
         // "papel" é um enum (Perfil); um valor fora do enum falha o bind do
         // @ModelAttribute (BindException), não o MethodArgumentTypeMismatchException
@@ -171,7 +180,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void listaUsuariosComPaginacao() throws Exception {
         mockMvc.perform(post("/api/usuarios")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -185,7 +195,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void filtraUsuariosPorArea() throws Exception {
         Tenant tenant = tenantRepository.findBySubdominio("nexo").orElseThrow();
         Area area = new Area();
@@ -208,7 +219,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void rejeitaAreaDeOutroTenantAoCadastrar() throws Exception {
         Tenant outroTenant = new Tenant();
         outroTenant.setNome("Outra Empresa " + UUID.randomUUID());
@@ -231,7 +243,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void editaUsuarioExistente() throws Exception {
         String id = cadastraEExtraiId(novoRequestValido("carlos.lima"));
 
@@ -247,7 +260,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void ativaEDesativaUsuarioSemExcluir() throws Exception {
         String id = cadastraEExtraiId(novoRequestValido("ativa.desativa"));
 
@@ -270,7 +284,8 @@ class UsuarioControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void administradorNaoConsegueDesativarAPropriaConta() throws Exception {
         mockMvc.perform(patch("/api/usuarios/{id}/situacao", adminId)
                         .contentType(MediaType.APPLICATION_JSON)

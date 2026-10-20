@@ -10,7 +10,9 @@ import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
 import com.nexo.repository.ConteudoRepository;
+import com.nexo.repository.TenantRepository;
 import com.nexo.repository.UsuarioRepository;
+import com.nexo.security.UsuarioAutenticado;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,8 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Regras de negócio do catálogo de Áreas (departamentos).
  *
  * <p><strong>Isolamento por tenant:</strong> segue o mesmo contrato do
- * {@link UsuarioService} — o tenant vem sempre do usuário autenticado
- * ({@code requisitanteEmail}), nunca de um parâmetro do cliente. Uma área de
+ * {@link UsuarioService} — o tenant vem sempre do principal autenticado
+ * ({@code tenantId}), nunca de um parâmetro do cliente. Uma área de
  * outro tenant responde {@link ResourceNotFoundException} (404, nunca 403),
  * para não revelar que aquele registro existe em outra empresa.</p>
  */
@@ -36,17 +38,19 @@ public class AreaService {
     private final AreaRepository areaRepository;
     private final UsuarioRepository usuarioRepository;
     private final ConteudoRepository conteudoRepository;
+    private final TenantRepository tenantRepository;
 
     public AreaService(AreaRepository areaRepository, UsuarioRepository usuarioRepository,
-                       ConteudoRepository conteudoRepository) {
+                       ConteudoRepository conteudoRepository, TenantRepository tenantRepository) {
         this.areaRepository = areaRepository;
         this.usuarioRepository = usuarioRepository;
         this.conteudoRepository = conteudoRepository;
+        this.tenantRepository = tenantRepository;
     }
 
     @Transactional
-    public AreaResponse criar(AreaRequest request, String requisitanteEmail) {
-        Tenant tenant = tenantDoRequisitante(requisitanteEmail);
+    public AreaResponse criar(AreaRequest request, UsuarioAutenticado requisitante) {
+        Tenant tenant = tenantDoRequisitante(requisitante);
         String nome = request.nome().trim();
         exigirNomeDisponivel(tenant.getId(), nome, null);
 
@@ -65,8 +69,8 @@ public class AreaService {
      */
     @Transactional(readOnly = true)
     public Page<AreaResponse> listar(String nome, boolean incluirInativas, Pageable pageable,
-                                     String requisitanteEmail) {
-        UUID tenantId = tenantDoRequisitante(requisitanteEmail).getId();
+                                     UsuarioAutenticado requisitante) {
+        UUID tenantId = tenantDoRequisitante(requisitante).getId();
         String trecho = nome == null ? "" : nome.trim();
         Page<Area> areas = incluirInativas
                 ? areaRepository.findByTenantIdAndNomeContainingIgnoreCase(tenantId, trecho, pageable)
@@ -87,13 +91,13 @@ public class AreaService {
     }
 
     @Transactional(readOnly = true)
-    public AreaResponse buscarPorId(UUID id, String requisitanteEmail) {
-        return comTotal(buscarEntidadeNoTenant(id, requisitanteEmail));
+    public AreaResponse buscarPorId(UUID id, UsuarioAutenticado requisitante) {
+        return comTotal(buscarEntidadeNoTenant(id, requisitante));
     }
 
     @Transactional
-    public AreaResponse atualizar(UUID id, AreaRequest request, String requisitanteEmail) {
-        Area area = buscarEntidadeNoTenant(id, requisitanteEmail);
+    public AreaResponse atualizar(UUID id, AreaRequest request, UsuarioAutenticado requisitante) {
+        Area area = buscarEntidadeNoTenant(id, requisitante);
         String nome = request.nome().trim();
         exigirNomeDisponivel(area.getTenant().getId(), nome, area.getId());
 
@@ -108,8 +112,8 @@ public class AreaService {
      * continuaria apontando para um departamento que o cadastro não oferece mais.
      */
     @Transactional
-    public AreaResponse inativar(UUID id, String requisitanteEmail) {
-        Area area = buscarEntidadeNoTenant(id, requisitanteEmail);
+    public AreaResponse inativar(UUID id, UsuarioAutenticado requisitante) {
+        Area area = buscarEntidadeNoTenant(id, requisitante);
 
         if (usuarioRepository.existsByAreaId(area.getId())) {
             throw new OperacaoNaoPermitidaException(
@@ -122,8 +126,8 @@ public class AreaService {
     }
 
     @Transactional
-    public AreaResponse ativar(UUID id, String requisitanteEmail) {
-        Area area = buscarEntidadeNoTenant(id, requisitanteEmail);
+    public AreaResponse ativar(UUID id, UsuarioAutenticado requisitante) {
+        Area area = buscarEntidadeNoTenant(id, requisitante);
         area.setAtivo(true);
         return comTotal(areaRepository.saveAndFlush(area));
     }
@@ -162,8 +166,8 @@ public class AreaService {
                 });
     }
 
-    private Area buscarEntidadeNoTenant(UUID id, String requisitanteEmail) {
-        Tenant tenant = tenantDoRequisitante(requisitanteEmail);
+    private Area buscarEntidadeNoTenant(UUID id, UsuarioAutenticado requisitante) {
+        Tenant tenant = tenantDoRequisitante(requisitante);
         Area area = areaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Área não encontrada: " + id));
         if (!area.getTenant().getId().equals(tenant.getId())) {
@@ -172,10 +176,9 @@ public class AreaService {
         return area;
     }
 
-    private Tenant tenantDoRequisitante(String requisitanteEmail) {
-        return usuarioRepository.findByEmailIgnoreCase(requisitanteEmail)
-                .map(Usuario::getTenant)
+    private Tenant tenantDoRequisitante(UsuarioAutenticado requisitante) {
+        return tenantRepository.findById(requisitante.getTenantId())
                 .orElseThrow(() -> new IllegalStateException(
-                        "Usuário autenticado não encontrado na base: " + requisitanteEmail));
+                        "Tenant do usuário autenticado não encontrado: " + requisitante.getTenantId()));
     }
 }

@@ -23,6 +23,8 @@ import com.nexo.repository.AreaRepository;
 import com.nexo.repository.CargoRepository;
 import com.nexo.repository.UsuarioFiltro;
 import com.nexo.repository.UsuarioRepository;
+import com.nexo.repository.TenantRepository;
+import com.nexo.security.UsuarioAutenticado;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -63,11 +65,15 @@ class UsuarioServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private TenantRepository tenantRepository;
+
     @InjectMocks
     private UsuarioService usuarioService;
 
     private Tenant tenant;
     private Usuario admin;
+    private UsuarioAutenticado requisitante;
     private CriarUsuarioRequest requestValido;
 
     @BeforeEach
@@ -80,13 +86,16 @@ class UsuarioServiceTest {
         admin.setEmail(ADMIN_EMAIL);
         admin.setSenhaHash("hash-admin");
         admin.setPapel(Perfil.ADMIN);
+        UUID adminId = UUID.randomUUID();
+        ReflectionTestUtils.setField(admin, "id", adminId);
+        requisitante = new UsuarioAutenticado(adminId, tenant.getId(), "Admin", ADMIN_EMAIL,
+                "hash-admin", Perfil.ADMIN, true);
+        when(tenantRepository.findById(tenant.getId())).thenReturn(Optional.of(tenant));
 
         requestValido = new CriarUsuarioRequest(
                 "Maria Silva", "Maria.Silva@Empresa.com", "SenhaForte1",
                 Perfil.COLABORADOR, null, null, LocalDate.now().minusDays(1));
 
-        // Comum à maioria dos testes: resolver o tenant a partir do e-mail do requisitante.
-        when(usuarioRepository.findByEmailIgnoreCase(ADMIN_EMAIL)).thenReturn(Optional.of(admin));
     }
 
     @Test
@@ -96,7 +105,7 @@ class UsuarioServiceTest {
         when(passwordEncoder.encode("SenhaForte1")).thenReturn("hash-bcrypt");
         when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        UsuarioResponse response = usuarioService.criar(requestValido, ADMIN_EMAIL);
+        UsuarioResponse response = usuarioService.criar(requestValido, requisitante);
 
         assertThat(response.email()).isEqualTo("maria.silva@empresa.com");
         verify(passwordEncoder, times(1)).encode("SenhaForte1");
@@ -107,7 +116,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.existsByTenantIdAndEmailIgnoreCase(tenant.getId(), "maria.silva@empresa.com"))
                 .thenReturn(true);
 
-        assertThatThrownBy(() -> usuarioService.criar(requestValido, ADMIN_EMAIL))
+        assertThatThrownBy(() -> usuarioService.criar(requestValido, requisitante))
                 .isInstanceOf(EmailDuplicadoException.class);
 
         verify(usuarioRepository, never()).saveAndFlush(any());
@@ -127,7 +136,7 @@ class UsuarioServiceTest {
                 "Maria Silva", "maria@empresa.com", "SenhaForte1",
                 Perfil.COLABORADOR, cargoId, null, LocalDate.now());
 
-        assertThatThrownBy(() -> usuarioService.criar(request, ADMIN_EMAIL))
+        assertThatThrownBy(() -> usuarioService.criar(request, requisitante))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         verify(usuarioRepository, never()).saveAndFlush(any());
@@ -141,7 +150,7 @@ class UsuarioServiceTest {
         Page<Usuario> pagina = new PageImpl<>(List.of(usuario), pageable, 1);
         when(usuarioRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(pagina);
 
-        Page<UsuarioResponse> resultado = usuarioService.listar(UsuarioFiltro.vazio(), pageable, ADMIN_EMAIL);
+        Page<UsuarioResponse> resultado = usuarioService.listar(UsuarioFiltro.vazio(), pageable, requisitante);
 
         assertThat(resultado.getTotalElements()).isEqualTo(1);
         assertThat(resultado.getContent().get(0).email()).isEqualTo(usuario.getEmail());
@@ -152,7 +161,7 @@ class UsuarioServiceTest {
         UUID id = UUID.randomUUID();
         when(usuarioRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> usuarioService.buscarPorId(id, ADMIN_EMAIL))
+        assertThatThrownBy(() -> usuarioService.buscarPorId(id, requisitante))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -164,7 +173,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.findById(id)).thenReturn(Optional.of(usuarioDeOutroTenant));
 
         // Nunca 403: para o admin do tenant errado, o registro "não existe".
-        assertThatThrownBy(() -> usuarioService.buscarPorId(id, ADMIN_EMAIL))
+        assertThatThrownBy(() -> usuarioService.buscarPorId(id, requisitante))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -177,7 +186,7 @@ class UsuarioServiceTest {
         AtualizarUsuarioRequest request = new AtualizarUsuarioRequest(
                 "Maria S. Souza", null, null, Perfil.ADMIN);
 
-        UsuarioResponse response = usuarioService.atualizar(UUID.randomUUID(), request, ADMIN_EMAIL);
+        UsuarioResponse response = usuarioService.atualizar(UUID.randomUUID(), request, requisitante);
 
         assertThat(response.nomeCompleto()).isEqualTo("Maria S. Souza");
         assertThat(response.papel()).isEqualTo(Perfil.ADMIN);
@@ -192,11 +201,12 @@ class UsuarioServiceTest {
         when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UsuarioResponse response = usuarioService.atualizarSituacao(
-                UUID.randomUUID(), SituacaoUsuario.INATIVO, ADMIN_EMAIL);
+                UUID.randomUUID(), SituacaoUsuario.INATIVO, requisitante);
 
         assertThat(response.situacao()).isEqualTo(SituacaoUsuario.INATIVO);
         verify(usuarioRepository, never()).deleteById(any());
-        verify(usuarioRepository, never()).delete((Usuario) any());    }
+        verify(usuarioRepository, never()).delete((Usuario) any());
+    }
 
     @Test
     void reativaUsuarioDesativado() {
@@ -206,7 +216,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UsuarioResponse response = usuarioService.atualizarSituacao(
-                UUID.randomUUID(), SituacaoUsuario.ATIVO, ADMIN_EMAIL);
+                UUID.randomUUID(), SituacaoUsuario.ATIVO, requisitante);
 
         assertThat(response.situacao()).isEqualTo(SituacaoUsuario.ATIVO);
     }
@@ -216,7 +226,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.findById(any(UUID.class))).thenReturn(Optional.of(admin));
 
         assertThatThrownBy(() -> usuarioService.atualizarSituacao(
-                UUID.randomUUID(), SituacaoUsuario.INATIVO, ADMIN_EMAIL))
+                UUID.randomUUID(), SituacaoUsuario.INATIVO, requisitante))
                 .isInstanceOf(OperacaoNaoPermitidaException.class);
 
         verify(usuarioRepository, never()).saveAndFlush(any());
@@ -229,7 +239,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.saveAndFlush(any(Usuario.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UsuarioResponse response = usuarioService.atualizarSituacao(
-                UUID.randomUUID(), SituacaoUsuario.INATIVO, ADMIN_EMAIL);
+                UUID.randomUUID(), SituacaoUsuario.INATIVO, requisitante);
 
         assertThat(response.situacao()).isEqualTo(SituacaoUsuario.INATIVO);
     }

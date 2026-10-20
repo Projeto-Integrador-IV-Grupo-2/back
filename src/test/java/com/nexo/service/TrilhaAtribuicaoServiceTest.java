@@ -20,6 +20,7 @@ import com.nexo.entity.Usuario;
 import com.nexo.event.AtribuicaoAtrasadaEvent;
 import com.nexo.event.TrilhaAtribuidaEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
+import com.nexo.event.TrilhaIniciadaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
@@ -148,20 +149,35 @@ class TrilhaAtribuicaoServiceTest {
     }
 
     @Test
-    void atualizaStatusDoProgressoExistente() {
+    void usuarioNaoPodeDefinirManualmentoStatusAtrasada() {
         TrilhaAtribuicao existente = progressoExistente(StatusAtribuicao.EM_ANDAMENTO);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(existente));
+
+        assertThatThrownBy(() -> trilhaAtribuicaoService.atualizar(
+                trilhaId, new AtualizarProgressoRequest(StatusAtribuicao.ATRASADA), requisitante))
+                .isInstanceOf(OperacaoNaoPermitidaException.class)
+                .hasMessageContaining("determinado pelo prazo");
+        verify(trilhaAtribuicaoRepository, never()).saveAndFlush(any(TrilhaAtribuicao.class));
+        verify(publisher, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    void atualizarParaEmAndamentoPublicaEventoApenasNoPrimeiroInicio() {
+        TrilhaAtribuicao existente = progressoExistente(StatusAtribuicao.NAO_INICIADA);
         when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
         when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
                 .thenReturn(Optional.of(existente));
         when(trilhaAtribuicaoRepository.saveAndFlush(any(TrilhaAtribuicao.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProgressoTrilhaResponse response = trilhaAtribuicaoService.atualizar(
-                trilhaId, new AtualizarProgressoRequest(StatusAtribuicao.ATRASADA), requisitante);
+        ProgressoTrilhaResponse resposta = trilhaAtribuicaoService.atualizar(
+                trilhaId, new AtualizarProgressoRequest(StatusAtribuicao.EM_ANDAMENTO), requisitante);
 
-        assertThat(response.status()).isEqualTo(StatusAtribuicao.ATRASADA);
-        assertThat(response.concluidoEm()).isNull();
-        verify(publisher, never()).publishEvent(any(Object.class));
+        assertThat(resposta.status()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
+        assertThat(existente.getIniciadoEm()).isNotNull();
+        verify(publisher).publishEvent(any(TrilhaIniciadaEvent.class));
     }
 
     @Test
@@ -241,6 +257,24 @@ class TrilhaAtribuicaoServiceTest {
     }
 
     @Test
+    void concluirNovamenteEhIdempotenteEPreservaDataSemRepublicarEvento() {
+        TrilhaAtribuicao existente = progressoExistente(StatusAtribuicao.CONCLUIDA);
+        java.time.OffsetDateTime conclusaoOriginal = java.time.OffsetDateTime.parse("2026-10-01T12:00:00Z");
+        existente.setConcluidoEm(conclusaoOriginal);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(existente));
+        when(trilhaAtribuicaoRepository.saveAndFlush(any(TrilhaAtribuicao.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProgressoTrilhaResponse response = trilhaAtribuicaoService.concluir(trilhaId, requisitante);
+
+        assertThat(response.status()).isEqualTo(StatusAtribuicao.CONCLUIDA);
+        assertThat(response.concluidoEm()).isEqualTo(conclusaoOriginal);
+        verify(publisher, never()).publishEvent(any(TrilhaConcluidaEvent.class));
+    }
+
+    @Test
     void concluirSemProgressoExistenteLancaResourceNotFound() {
         when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
         when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
@@ -288,6 +322,9 @@ class TrilhaAtribuicaoServiceTest {
         progresso.setUsuario(usuarioComId(requisitante.getId()));
         progresso.setAtribuidoPor(usuarioComId(requisitante.getId()));
         progresso.setStatus(status);
+        if (status == StatusAtribuicao.EM_ANDAMENTO || status == StatusAtribuicao.CONCLUIDA) {
+            progresso.setIniciadoEm(java.time.OffsetDateTime.now());
+        }
         ReflectionTestUtils.setField(progresso, "id", UUID.randomUUID());
         return progresso;
     }

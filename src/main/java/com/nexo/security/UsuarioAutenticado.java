@@ -47,7 +47,7 @@ public class UsuarioAutenticado implements UserDetails {
                 usuario.getEmail(),
                 usuario.getSenhaHash(),
                 usuario.getPapel(),
-                usuario.isAtivo());
+                usuario.isAtivo() && usuario.getTenant().isAtivo());
     }
 
     public UUID getId() {

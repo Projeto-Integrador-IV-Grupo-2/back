@@ -6,6 +6,7 @@ import com.nexo.dto.usuario.CriarUsuarioRequest;
 import com.nexo.dto.usuario.UsuarioResponse;
 import com.nexo.repository.UsuarioFiltro;
 import com.nexo.service.UsuarioService;
+import com.nexo.security.UsuarioAutenticado;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
@@ -14,7 +15,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -52,9 +53,9 @@ public class UsuarioController {
 
     @PostMapping
     public ResponseEntity<UsuarioResponse> criar(@Valid @RequestBody CriarUsuarioRequest request,
-                                                  Authentication authentication,
+                                                  @AuthenticationPrincipal UsuarioAutenticado requisitante,
                                                   UriComponentsBuilder uriBuilder) {
-        UsuarioResponse response = usuarioService.criar(request, authentication.getName());
+        UsuarioResponse response = usuarioService.criar(request, requisitante);
         URI location = uriBuilder.path("/api/usuarios/{id}").buildAndExpand(response.id()).toUri();
         return ResponseEntity.created(location).body(response);
     }
@@ -62,26 +63,26 @@ public class UsuarioController {
     @GetMapping
     public PagedModel<UsuarioResponse> listar(@ModelAttribute UsuarioFiltro filtro,
                                                @PageableDefault(size = 20, sort = "nomeCompleto") Pageable pageable,
-                                               Authentication authentication) {
-        return new PagedModel<>(usuarioService.listar(filtro, pageable, authentication.getName()));
+                                               @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return new PagedModel<>(usuarioService.listar(filtro, pageable, requisitante));
     }
 
     @GetMapping("/{id}")
-    public UsuarioResponse buscarPorId(@PathVariable UUID id, Authentication authentication) {
-        return usuarioService.buscarPorId(id, authentication.getName());
+    public UsuarioResponse buscarPorId(@PathVariable UUID id, @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return usuarioService.buscarPorId(id, requisitante);
     }
 
     @PutMapping("/{id}")
     public UsuarioResponse atualizar(@PathVariable UUID id,
                                       @Valid @RequestBody AtualizarUsuarioRequest request,
-                                      Authentication authentication) {
-        return usuarioService.atualizar(id, request, authentication.getName());
+                                      @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return usuarioService.atualizar(id, request, requisitante);
     }
 
     @PatchMapping("/{id}/situacao")
     public UsuarioResponse atualizarSituacao(@PathVariable UUID id,
                                               @Valid @RequestBody AtualizarSituacaoRequest request,
-                                              Authentication authentication) {
-        return usuarioService.atualizarSituacao(id, request.situacao(), authentication.getName());
+                                              @AuthenticationPrincipal UsuarioAutenticado requisitante) {
+        return usuarioService.atualizarSituacao(id, request.situacao(), requisitante);
     }
 }
