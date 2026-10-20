@@ -26,7 +26,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.context.support.TestExecutionEvent;
+import org.springframework.security.test.context.support.WithUserDetails;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +48,7 @@ class AreaControllerTest {
 
     private static final String ADMIN_EMAIL = "admin@nexo.com";
     private static final String COLABORADOR_EMAIL = "colaborador.area@nexo.com";
+    private static final String GESTOR_EMAIL = "gestor.area@nexo.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -71,10 +73,15 @@ class AreaControllerTest {
     @BeforeEach
     void carregaTenantDoSeed() {
         tenant = usuarioRepository.findByEmailIgnoreCase(ADMIN_EMAIL).orElseThrow().getTenant();
+        // @WithUserDetails carrega o principal do banco antes do corpo do teste,
+        // então os usuários não-admin precisam existir já aqui.
+        criaColaborador();
+        criaUsuario(GESTOR_EMAIL, Perfil.GESTOR);
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void administradorCriaAreaERecebe201ComLocation() throws Exception {
         mockMvc.perform(post("/api/areas")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -86,7 +93,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void nomeEmBrancoRetorna400ComErroPorCampo() throws Exception {
         mockMvc.perform(post("/api/areas")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -98,7 +106,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void nomeDuplicadoNoMesmoTenantRetorna409() throws Exception {
         String corpo = objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null));
 
@@ -109,7 +118,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void administradorRenomeiaArea() throws Exception {
         Area area = areaGravada(nomeUnico());
         String novoNome = nomeUnico();
@@ -122,7 +132,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void inativaEDepoisReativaArea() throws Exception {
         Area area = areaGravada(nomeUnico());
 
@@ -136,7 +147,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void areaComUsuarioVinculadoNaoPodeSerInativada() throws Exception {
         Area area = areaGravada(nomeUnico());
         usuarioVinculadoA(area);
@@ -147,7 +159,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void listagemPadraoOmiteInativas() throws Exception {
         Area inativa = areaGravada(nomeUnico());
         inativa.setAtivo(false);
@@ -166,7 +179,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void criaAreaComDescricaoEDevolveContadores() throws Exception {
         mockMvc.perform(post("/api/areas")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -178,10 +192,9 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = "gestor.area@nexo.com", roles = "GESTOR")
+    @WithUserDetails(value = GESTOR_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void gestorPodeCriarArea() throws Exception {
-        criaUsuario("gestor.area@nexo.com", Perfil.GESTOR);
-
         mockMvc.perform(post("/api/areas")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new AreaRequest(nomeUnico(), null))))
@@ -189,14 +202,16 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void ordenacaoPorCampoInexistenteRetorna400() throws Exception {
         mockMvc.perform(get("/api/areas").param("sort", "naoExiste"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void idInexistenteRetorna404() throws Exception {
         mockMvc.perform(get("/api/areas/{id}", UUID.randomUUID()))
                 .andExpect(status().isNotFound());
@@ -208,7 +223,8 @@ class AreaControllerTest {
      * para a API não revelar que aquele registro existe.
      */
     @Test
-    @WithMockUser(username = ADMIN_EMAIL, roles = "ADMIN")
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void areaDeOutroTenantNaoApareceNemPodeSerAlcancada() throws Exception {
         Area deOutraEmpresa = areaDeOutroTenant();
 
@@ -229,7 +245,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = COLABORADOR_EMAIL, roles = "COLABORADOR")
+    @WithUserDetails(value = COLABORADOR_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void colaboradorLeAreasMasNaoPodeCriar() throws Exception {
         criaColaborador();
 
@@ -243,7 +260,8 @@ class AreaControllerTest {
     }
 
     @Test
-    @WithMockUser(username = COLABORADOR_EMAIL, roles = "COLABORADOR")
+    @WithUserDetails(value = COLABORADOR_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
     void colaboradorNaoPodeEditarNemInativarArea() throws Exception {
         criaColaborador();
         Area area = areaGravada(nomeUnico());
