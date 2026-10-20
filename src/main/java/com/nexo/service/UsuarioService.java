@@ -135,7 +135,7 @@ public class UsuarioService {
     public UsuarioResponse atualizarSituacao(UUID id, SituacaoUsuario novaSituacao, UsuarioAutenticado requisitante) {
         Usuario usuario = buscarEntidadeNoTenant(id, requisitante);
 
-        if (novaSituacao == SituacaoUsuario.INATIVO && usuario.getId().equals(requisitante.getId())) {
+        if (novaSituacao == SituacaoUsuario.INATIVO && requisitante.getId().equals(usuario.getId())) {
             throw new OperacaoNaoPermitidaException("Um administrador não pode desativar a própria conta");
         }
 

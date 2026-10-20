@@ -54,13 +54,14 @@ class DashboardGestaoServiceTest {
     @Test
     void montaIndicadoresSemExporDadosDeOutroTenant() {
         when(trilhaRepository.countByTenantIdAndAtivoTrue(tenantId)).thenReturn(3L);
+        // Os mocks da projeção são criados antes: stubbing aninhado dentro de outro when() quebra o Mockito.
+        List<AtribuicaoDashboardProjection> atribuicoes = List.of(
+                atribuicao(StatusAtribuicao.NAO_INICIADA, null, null, null),
+                atribuicao(StatusAtribuicao.EM_ANDAMENTO, null, null, null),
+                atribuicao(StatusAtribuicao.CONCLUIDA, null, null, null),
+                atribuicao(StatusAtribuicao.CONCLUIDA, null, null, null));
         when(atribuicaoRepository.buscarDadosDashboardPorTenant(tenantId, PageRequest.of(0, 500)))
-                .thenReturn(new SliceImpl<>(List.of(
-                        atribuicao(StatusAtribuicao.NAO_INICIADA, null, null, null),
-                        atribuicao(StatusAtribuicao.EM_ANDAMENTO, null, null, null),
-                        atribuicao(StatusAtribuicao.CONCLUIDA, null, null, null),
-                        atribuicao(StatusAtribuicao.CONCLUIDA, null, null, null)),
-                        PageRequest.of(0, 500), false));
+                .thenReturn(new SliceImpl<>(atribuicoes, PageRequest.of(0, 500), false));
         when(historicoRepository.encontrarTrilhasMaisIniciadas(tenantId, 5)).thenReturn(List.of());
 
         DashboardGestaoResponse resposta = service.gerar(requisitante);
@@ -79,14 +80,12 @@ class DashboardGestaoServiceTest {
         when(trilhaRepository.countByTenantIdAndAtivoTrue(tenantId)).thenReturn(1L);
         var pagina0 = PageRequest.of(0, 500);
         var pagina1 = PageRequest.of(1, 500);
+        var atrasada = atribuicao(StatusAtribuicao.EM_ANDAMENTO, HOJE.minusDays(1), areaId, "Operações");
+        var concluida = atribuicao(StatusAtribuicao.CONCLUIDA, HOJE.minusDays(3), areaId, "Operações");
         when(atribuicaoRepository.buscarDadosDashboardPorTenant(tenantId, pagina0))
-                .thenReturn(new SliceImpl<>(List.of(
-                        atribuicao(StatusAtribuicao.EM_ANDAMENTO, HOJE.minusDays(1), areaId, "Operações")),
-                        pagina0, true));
+                .thenReturn(new SliceImpl<>(List.of(atrasada), pagina0, true));
         when(atribuicaoRepository.buscarDadosDashboardPorTenant(tenantId, pagina1))
-                .thenReturn(new SliceImpl<>(List.of(
-                        atribuicao(StatusAtribuicao.CONCLUIDA, HOJE.minusDays(3), areaId, "Operações")),
-                        pagina1, false));
+                .thenReturn(new SliceImpl<>(List.of(concluida), pagina1, false));
         when(historicoRepository.encontrarTrilhasMaisIniciadas(tenantId, 5)).thenReturn(List.of());
 
         DashboardGestaoResponse resposta = service.gerar(requisitante);
@@ -102,7 +101,9 @@ class DashboardGestaoServiceTest {
 
     private AtribuicaoDashboardProjection atribuicao(
             StatusAtribuicao status, LocalDate prazo, UUID areaId, String areaNome) {
-        AtribuicaoDashboardProjection projection = org.mockito.Mockito.mock(AtribuicaoDashboardProjection.class);
+        // Lenient: nem todo campo é lido para toda atribuição (ex.: área só importa quando atrasada).
+        AtribuicaoDashboardProjection projection = org.mockito.Mockito.mock(AtribuicaoDashboardProjection.class,
+                org.mockito.Mockito.withSettings().strictness(org.mockito.quality.Strictness.LENIENT));
         when(projection.getStatus()).thenReturn(status);
         when(projection.getPrazo()).thenReturn(prazo);
         when(projection.getAreaId()).thenReturn(areaId);
