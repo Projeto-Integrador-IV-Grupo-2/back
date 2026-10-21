@@ -5,7 +5,8 @@ name: nexo
 
 services:
   db:
-    image: postgres:16-alpine
+    # PostgreSQL 16 com a extensão pgvector (embeddings do assistente de IA).
+    image: pgvector/pgvector:pg16
     container_name: nexo-postgres
     restart: unless-stopped
     environment:
