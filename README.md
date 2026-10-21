@@ -13,7 +13,8 @@ dashboards.
 | Linguagem | Java | 17 |
 | Framework | Spring Boot | 3.4 |
 | Web / REST | Spring Web (MVC) | — |
-| Banco de dados | PostgreSQL | 16 |
+| Banco de dados | PostgreSQL + pgvector | 16 |
+| Assistente de IA | Google Gemini (chat + embeddings) | `gemini-2.5-flash` / `gemini-embedding-001` |
 | Acesso a dados | Spring Data JPA (Hibernate) | — |
 | Migrations | Flyway | — |
 | Segurança | Spring Security | — |
@@ -316,7 +317,8 @@ de API) para validar o link e preencher duração e miniatura.
 | `GET /api/conteudos/{id}` | autenticado | Detalha um conteúdo (rascunho responde 404 ao colaborador) |
 | `POST /api/conteudos` | `ADMIN`, `GESTOR` | Cria em rascunho. `VIDEO` exige `videoUrl`, `TEXTO` exige `corpo`, `LINK` exige `linkUrl` |
 | `PUT /api/conteudos/{id}` | `ADMIN`, `GESTOR` | Edita (o Vimeo só é consultado de novo se o link mudar) |
-| `PATCH /api/conteudos/{id}/publicar` | `ADMIN`, `GESTOR` | Publica — passa a aparecer para os colaboradores |
+| `PATCH /api/conteudos/{id}/publicar` | `ADMIN`, `GESTOR` | Publica — passa a aparecer para os colaboradores e é indexado para o assistente de IA |
+| `PATCH /api/conteudos/{id}/despublicar` | `ADMIN`, `GESTOR` | Volta para rascunho e sai da busca do assistente. Conteúdo usado em etapa de trilha responde **409** |
 | `GET /api/trilhas/{id}/etapas` | autenticado | Etapas em ordem, com `concluida` para o usuário autenticado |
 | `POST /api/trilhas/{id}/etapas` | `ADMIN`, `GESTOR` | Adiciona etapa (conteúdo publicado) no fim da trilha |
 | `PUT /api/trilhas/{id}/etapas/{etapaId}` | `ADMIN`, `GESTOR` | Troca conteúdo, título ou descrição |
@@ -339,6 +341,85 @@ gravado em `trilha_atribuicao.percentual`. Quem recalcula é o
 - trilha já concluída permanece concluída (e sempre aparece com 100%).
 
 `AreaResponse.totalConteudos` conta os conteúdos com `conteudo.area_id` da área.
+
+---
+
+## Assistente de IA
+
+### Escolha do modelo
+
+Toda chamada de IA passa pela interface `ClienteIa` (`com.nexo.ia`). Nenhuma
+outra parte do sistema conhece o provedor: trocar de provedor é escrever uma
+nova implementação e acrescentá-la na `ClienteIaFactory`, escolhida por
+`IA_PROVEDOR`.
+
+| Critério | Google Gemini (escolhido) | OpenAI |
+|---|---|---|
+| Chat | `gemini-2.5-flash` | `gpt-4o-mini` |
+| Embeddings | `gemini-embedding-001` (768 dimensões via `outputDimensionality`) | `text-embedding-3-small` (1536) |
+| Custo | Camada gratuita com limite diário, suficiente para o projeto | Pago desde a primeira chamada |
+| Português | Bom em chat e em busca semântica | Bom |
+| Integração | Uma chave só para chat e embeddings, API REST simples | Uma chave só, API REST simples |
+
+**Motivo:** a camada gratuita do Gemini cobre o uso de um projeto acadêmico sem
+cartão de crédito, com uma única chave para chat e embeddings e boa qualidade
+em português. O Claude, da Anthropic, foi descartado por não oferecer
+embeddings: exigiria um segundo provedor, como a Voyage AI.
+
+Sem `IA_API_KEY` a API sobe normalmente, e só as rotas de IA respondem **503**
+com mensagem clara. Timeout, limite de uso (429) e erro 5xx do provedor ganham
+até `IA_MAX_TENTATIVAS` tentativas, com espera crescente. A chave vai só no
+header da chamada: nunca entra em log nem em resposta.
+
+Nos testes (`IA_PROVEDOR=fake`, já definido no perfil `test`), o
+`ClienteIaFake` gera embeddings e respostas determinísticos, sem rede.
+
+### Indexação dos documentos
+
+Cada conteúdo publicado vira trechos pesquisáveis em `conteudo_chunk`, cada um
+com o seu embedding:
+
+1. O `ConteudoService` publica `ConteudoPublicadoEvent`, `ConteudoAtualizadoEvent`
+   (edição de conteúdo publicado) ou `ConteudoDespublicadoEvent`. O upload de
+   arquivos (issue #55) publica `ArquivoEnviadoEvent`.
+2. O `IndexadorDeConteudoListener` escuta esses eventos **depois do commit** e
+   **fora da requisição** (`@TransactionalEventListener` + `@Async`). O cadastro
+   de conteúdos não conhece a indexação.
+3. O `IndexacaoService` junta o texto das `FonteDeTextoDoConteudo`. Hoje a
+   única fonte é `CamposDoConteudo`, com título, descrição e corpo.
+4. O `DivisorDeTexto` corta o texto em trechos de até `IA_TAMANHO_TRECHO`
+   caracteres, com `IA_SOBREPOSICAO_TRECHO` de sobreposição. O corte cai, de
+   preferência, em fim de parágrafo ou de frase.
+5. O provedor gera os embeddings, e os trechos antigos são trocados pelos novos
+   numa transação curta.
+
+Despublicar remove os trechos. A busca filtra por tenant e por
+`status = PUBLICADO` na própria consulta, então um rascunho nunca aparece,
+mesmo antes da remoção.
+
+**Falhas:** arquivo ilegível ou provedor fora do ar não quebra a publicação. A
+falha fica em `indexacao_conteudo`, com status `FALHOU`, número de tentativas
+e último erro. A `RotinaDeReindexacao` tenta de novo a cada minuto, com espera
+que dobra a cada falha, até `IA_INDEXACAO_MAX_TENTATIVAS`.
+
+**Extração de arquivos:** a `ExtratorDeTextoFactory` entrega o extrator pelo
+tipo MIME: PDF (PDFBox), DOCX (Apache POI), TXT e MD (UTF-8). Quando a issue #55
+criar a tabela `arquivo`, falta só uma `FonteDeTextoDoConteudo` que leia os
+arquivos do armazenamento e use a factory.
+
+**Busca:** o `BuscaDeTrechosService` compara o embedding da pergunta com os
+trechos usando a distância de cosseno do pgvector (`<=>`). Trechos mais
+distantes que `IA_BUSCA_DISTANCIA_MAXIMA` são descartados.
+
+**Por que pgvector:** a similaridade roda no próprio PostgreSQL, com índice
+HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
+`docker-compose.yml` usa a imagem `pgvector/pgvector:pg16`, e os testes usam
+`jdbc:tc:pgvector:pg16`. **Em produção, o PostgreSQL precisa ter a extensão
+`vector` disponível.**
+
+> Quem já tinha o banco local com a imagem `postgres:16-alpine` só precisa
+> rodar `docker compose down && docker compose up -d`. O volume é reaproveitado,
+> porque a versão do PostgreSQL continua a 16.
 
 ---
 
@@ -508,6 +589,18 @@ define-se a variável e ela prevalece.
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Origens do frontend liberadas no CORS (separadas por vírgula) |
 | `VIMEO_OEMBED_URL` | `https://vimeo.com/api/oembed.json` | Endpoint de oEmbed usado para validar os vídeos (público, sem chave) |
 | `VIMEO_TIMEOUT` | `PT5S` | Tempo máximo de espera pela resposta do Vimeo |
+| `IA_PROVEDOR` | `gemini` | Implementação do `ClienteIa`: `gemini` ou `fake` (testes) |
+| `IA_API_KEY` | *(vazio)* | Chave da API do Gemini ([Google AI Studio](https://aistudio.google.com/apikey)). Sem ela, as rotas de IA respondem 503 |
+| `IA_MODELO` | `gemini-2.5-flash` | Modelo de chat |
+| `IA_MODELO_EMBEDDING` | `gemini-embedding-001` | Modelo de embeddings (sempre com 768 dimensões) |
+| `IA_TIMEOUT` | `PT20S` | Tempo máximo de cada chamada ao provedor |
+| `IA_MAX_TENTATIVAS` | `3` | Tentativas por chamada em timeout, 429 ou 5xx |
+| `IA_TAMANHO_TRECHO` | `1000` | Máximo de caracteres por trecho indexado |
+| `IA_SOBREPOSICAO_TRECHO` | `200` | Caracteres repetidos entre trechos vizinhos |
+| `IA_INDEXACAO_MAX_TENTATIVAS` | `5` | Tentativas de indexar um documento antes de desistir |
+| `IA_INDEXACAO_INTERVALO` | `PT5M` | Espera base entre uma falha de indexação e a próxima tentativa |
+| `IA_BUSCA_TRECHOS` | `5` | Quantos trechos entram no prompt |
+| `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
@@ -583,6 +676,7 @@ do PR. O workflow **não usa segredos**.
 | V16 | `V16__create_historico_interacao.sql` | Histórico de interações de trilhas, com detalhes JSONB e integridade por tenant |
 | V17 | `V17__track_trilha_start.sql` | Instante de início da atribuição, para auditar a primeira transição sem duplicar eventos |
 | V18 | `V18__add_conteudo_to_historico.sql` | Referência opcional de conteúdo no histórico, com integridade por tenant |
+| V19 | `V19__create_conteudo_chunk_e_indexacao.sql` | Extensão `vector`, tabela `conteudo_chunk` (embedding `vector(768)` + índice HNSW), enum `status_indexacao` e tabela `indexacao_conteudo` |
 
 **Atenção ao atualizar um banco que já contém dados:** as migrations V14 e V15
 validam as relações entre tenants e as duplicidades de e-mail/subdomínio sem
@@ -725,6 +819,7 @@ check aparecer pelo nome na lista.
 |---|---|
 | `Connection refused` na porta 5432 | O banco não subiu → `docker compose up -d` |
 | Testes falham com erro de Docker | Docker Desktop não está aberto/rodando |
+| `Could not find a valid Docker environment` com `Status 400` | Docker Engine 29+ recusa a versão de API usada pelo Testcontainers 1.20. Rode com `./mvnw verify -DargLine="-Dapi.version=1.44"` |
 | `UnsupportedClassVersionError` | JDK errado → use o **21** (`java -version`) |
 | Porta 8080 já em uso | Defina outra em `SERVER_PORT` |
 | `./mvnw: Permission denied` (Linux/macOS) | `chmod +x ./mvnw` |
