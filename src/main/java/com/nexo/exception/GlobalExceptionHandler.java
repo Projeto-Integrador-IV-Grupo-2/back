@@ -158,6 +158,13 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
     }
 
+    /** Assistente de IA sem chave, fora do ar ou no limite de uso. A mensagem nunca traz o prompt. */
+    @ExceptionHandler(IaIndisponivelException.class)
+    public ResponseEntity<ApiError> handleIaIndisponivel(IaIndisponivelException ex, HttpServletRequest request) {
+        log.warn("Assistente de IA indisponível em {}: {}", request.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
+    }
+
     /** Ex.: {@code DELETE} numa rota que só aceita {@code GET}. Sem isto viraria 500. */
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiError> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
