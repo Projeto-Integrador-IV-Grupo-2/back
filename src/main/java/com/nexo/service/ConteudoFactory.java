@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * Monta o material de um conteúdo conforme o tipo (Factory Method).
  *
  * <p>Cada tipo tem seu próprio método de montagem — {@link #video},
- * {@link #texto} e {@link #link} —, e todos limpam os campos dos outros tipos,
+ * {@link #texto}, {@link #link} e {@link #documento} —, e todos limpam os campos dos outros tipos,
  * para um conteúdo que trocou de tipo não carregar material velho. É o único
  * lugar que cria um {@link Conteudo}: o service só completa tenant, título,
  * categoria e área.</p>
@@ -46,6 +46,7 @@ public class ConteudoFactory {
             case VIDEO -> video(conteudo, request.videoUrl());
             case TEXTO -> texto(conteudo, request.corpo());
             case LINK -> link(conteudo, request.linkUrl());
+            case DOCUMENTO -> documento(conteudo);
         }
         conteudo.setTipo(tipo);
     }
@@ -77,6 +78,13 @@ public class ConteudoFactory {
         conteudo.setLinkUrl(exigirUrlHttp(linkUrl));
         limparVideo(conteudo);
         conteudo.setCorpo(null);
+    }
+
+    /** O material do documento são os arquivos anexados: nada de vídeo, corpo ou link. */
+    private static void documento(Conteudo conteudo) {
+        limparVideo(conteudo);
+        conteudo.setCorpo(null);
+        conteudo.setLinkUrl(null);
     }
 
     private static void limparVideo(Conteudo conteudo) {

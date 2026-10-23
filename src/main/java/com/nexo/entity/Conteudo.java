@@ -94,6 +94,22 @@ public class Conteudo {
     public Conteudo() {
     }
 
+    /**
+     * Factory Method do documento da tela de Conhecimento (issue #54): nasce
+     * do tipo {@link TipoConteudo#DOCUMENTO}, em {@link StatusConteudo#RASCUNHO}
+     * e com o responsável que o criou, no tenant dele. Os arquivos chegam
+     * depois, como {@link Arquivo}.
+     */
+    public static Conteudo novoDocumento(String titulo, Usuario responsavel) {
+        Conteudo documento = new Conteudo();
+        documento.tenant = responsavel.getTenant();
+        documento.titulo = titulo;
+        documento.tipo = TipoConteudo.DOCUMENTO;
+        documento.status = StatusConteudo.RASCUNHO;
+        documento.criadoPor = responsavel;
+        return documento;
+    }
+
     public boolean isPublicado() {
         return status == StatusConteudo.PUBLICADO;
     }

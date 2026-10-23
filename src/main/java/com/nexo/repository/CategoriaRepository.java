@@ -16,4 +16,7 @@ public interface CategoriaRepository extends JpaRepository<Categoria, UUID> {
     Page<Categoria> findByTenantIdAndNomeContainingIgnoreCase(UUID tenantId, String nome, Pageable pageable);
 
     Optional<Categoria> findByTenantIdAndNomeIgnoreCase(UUID tenantId, String nome);
+
+    /** Categoria do tenant; de outro tenant volta vazio (a API responde 404). */
+    Optional<Categoria> findByIdAndTenantId(UUID id, UUID tenantId);
 }

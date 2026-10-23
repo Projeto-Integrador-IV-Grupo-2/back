@@ -3,6 +3,7 @@ package com.nexo.repository;
 import com.nexo.entity.Conteudo;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -12,6 +13,9 @@ import org.springframework.data.repository.query.Param;
 public interface ConteudoRepository extends JpaRepository<Conteudo, UUID>, JpaSpecificationExecutor<Conteudo> {
 
     long countByAreaId(UUID areaId);
+
+    /** Conteúdo do tenant; de outro tenant volta vazio (a API responde 404). */
+    Optional<Conteudo> findByIdAndTenantId(UUID id, UUID tenantId);
 
     /** Contagem de conteúdos por área para uma página inteira de áreas, numa consulta só. */
     @Query("""
