@@ -358,6 +358,32 @@ são os arquivos anexados (tabela `arquivo`, V21).
   registros dos arquivos dele.
 - A tabela `arquivo_arquivo` do DER está errada e **não** é criada.
 
+Endpoints dos arquivos (os de conteúdo estão na tabela acima; o documento é
+criado com `POST /api/conteudos` e `"tipo": "DOCUMENTO"`):
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `POST /api/conteudos/{id}/arquivos` | `ADMIN`, `GESTOR` | Multipart com o arquivo no campo `arquivo`. 201 + `Location` do download |
+| `GET /api/conteudos/{id}/arquivos` | autenticado | Arquivos do conteúdo, na ordem de envio (mesma visibilidade do conteúdo) |
+| `GET /api/arquivos/{id}/download` | autenticado | Devolve o arquivo como anexo, com o **nome original** |
+
+- **Só PDF, DOCX, TXT e MD**, até `DOCUMENTOS_TAMANHO_MAXIMO`. O tipo é
+  conferido pelo **conteúdo** do arquivo (assinatura do PDF, estrutura do DOCX,
+  texto UTF-8 para TXT/MD), não só pela extensão: um texto renomeado para `.pdf`
+  é recusado. Tipo não permitido, conteúdo que não bate ou arquivo acima do
+  limite respondem **400** com o erro em `fieldErrors[].field = "arquivo"`.
+- **Visibilidade:** colaborador só lista e baixa arquivos de conteúdo
+  **publicado**; rascunho e outro tenant respondem **404**. Enviar arquivo é de
+  `ADMIN` e `GESTOR` (colaborador recebe **403**).
+- **Armazenamento:** o binário vai para `ARMAZENAMENTO_DIRETORIO` com uma chave
+  gerada (`tenant/uuid`); o nome enviado só volta no download. Quem escolhe o
+  armazenamento é a `ArmazenamentoFactory` (`ARMAZENAMENTO_TIPO`): guardar na
+  nuvem é outra implementação de `ArmazenamentoDeArquivos`, sem mudar quem usa.
+  Se a gravação no banco falhar, o binário já guardado é apagado.
+- **Indexação:** depois de gravar, a API publica `ArquivoEnviadoEvent`, e a
+  indexação do assistente reindexa o documento publicado. O texto dos arquivos
+  entra pela fonte `ArquivosDoConteudo`, junto com título e descrição.
+
 ---
 
 ## Assistente de IA
@@ -617,6 +643,10 @@ define-se a variável e ela prevalece.
 | `IA_INDEXACAO_INTERVALO` | `PT5M` | Espera base entre uma falha de indexação e a próxima tentativa |
 | `IA_BUSCA_TRECHOS` | `5` | Quantos trechos entram no prompt |
 | `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
+| `DOCUMENTOS_TAMANHO_MAXIMO` | `10MB` | Maior arquivo aceito no upload de documentos (vale também para o multipart) |
+| `DOCUMENTOS_TAMANHO_MAXIMO_REQUISICAO` | `12MB` | Tamanho máximo da requisição multipart inteira (arquivo + campos) |
+| `ARMAZENAMENTO_TIPO` | `local` | Onde ficam os binários dos arquivos; hoje só `local` |
+| `ARMAZENAMENTO_DIRETORIO` | `./data/arquivos` | Pasta dos arquivos no armazenamento `local` (fora do Git) |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
