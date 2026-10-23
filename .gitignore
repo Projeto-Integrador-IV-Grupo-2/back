@@ -40,3 +40,6 @@ logs/
 HELP.md
 .history/
 .history
+
+# Arquivos enviados em dev (app.armazenamento.diretorio)
+/data/
