@@ -28,7 +28,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 /**
  * Conteúdos de estudo (issue #40).
  *
- * <p>Criar, editar e publicar são de ADMIN e GESTOR (colaborador recebe 403).
+ * <p>Criar, editar, publicar e despublicar são de ADMIN e GESTOR (colaborador recebe 403).
  * Leitura é de qualquer usuário autenticado, mas colaborador só enxerga
  * conteúdo publicado — essa regra vive no {@link ConteudoService}.</p>
  */
@@ -81,5 +81,12 @@ public class ConteudoController {
     public ConteudoResponse publicar(@PathVariable UUID id,
                                      @AuthenticationPrincipal UsuarioAutenticado usuario) {
         return conteudoService.publicar(id, usuario);
+    }
+
+    @PatchMapping("/{id}/despublicar")
+    @PreAuthorize(GESTAO)
+    public ConteudoResponse despublicar(@PathVariable UUID id,
+                                        @AuthenticationPrincipal UsuarioAutenticado usuario) {
+        return conteudoService.despublicar(id, usuario);
     }
 }

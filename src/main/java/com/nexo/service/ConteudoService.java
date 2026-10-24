@@ -6,6 +6,8 @@ import com.nexo.entity.Area;
 import com.nexo.entity.Conteudo;
 import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusConteudo;
+import com.nexo.event.ConteudoAtualizadoEvent;
+import com.nexo.event.ConteudoDespublicadoEvent;
 import com.nexo.event.ConteudoPublicadoEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
@@ -14,6 +16,7 @@ import com.nexo.repository.ConteudoFiltro;
 import com.nexo.repository.ConteudoRepository;
 import com.nexo.repository.ConteudoSpecifications;
 import com.nexo.repository.TenantRepository;
+import com.nexo.repository.TrilhaEtapaRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
 import java.time.Clock;
@@ -45,6 +48,7 @@ public class ConteudoService {
     private final AreaRepository areaRepository;
     private final TenantRepository tenantRepository;
     private final UsuarioRepository usuarioRepository;
+    private final TrilhaEtapaRepository trilhaEtapaRepository;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
 
@@ -54,6 +58,7 @@ public class ConteudoService {
                            AreaRepository areaRepository,
                            TenantRepository tenantRepository,
                            UsuarioRepository usuarioRepository,
+                           TrilhaEtapaRepository trilhaEtapaRepository,
                            ApplicationEventPublisher publisher,
                            Clock clock) {
         this.conteudoRepository = conteudoRepository;
@@ -62,6 +67,7 @@ public class ConteudoService {
         this.areaRepository = areaRepository;
         this.tenantRepository = tenantRepository;
         this.usuarioRepository = usuarioRepository;
+        this.trilhaEtapaRepository = trilhaEtapaRepository;
         this.publisher = publisher;
         this.clock = clock;
     }
@@ -98,7 +104,11 @@ public class ConteudoService {
         Conteudo conteudo = buscarNoTenant(id, requisitante.getTenantId());
         conteudoFactory.aplicarMaterial(conteudo, request);
         aplicarDados(conteudo, request, requisitante.getTenantId());
-        return ConteudoResponse.de(conteudoRepository.saveAndFlush(conteudo));
+        ConteudoResponse resposta = ConteudoResponse.de(conteudoRepository.saveAndFlush(conteudo));
+        if (conteudo.isPublicado()) {
+            publisher.publishEvent(new ConteudoAtualizadoEvent(conteudo.getId(), requisitante.getTenantId()));
+        }
+        return resposta;
     }
 
     /** Torna o conteúdo visível aos colaboradores. Idempotente para quem já está publicado. */
@@ -116,6 +126,30 @@ public class ConteudoService {
                 requisitante.getTenantId(),
                 conteudo.getArea() == null ? null : conteudo.getArea().getId(),
                 requisitante.getId()));
+        return resposta;
+    }
+
+    /**
+     * Volta o conteúdo para rascunho: some para os colaboradores e sai da
+     * busca do assistente de IA. Idempotente para quem já é rascunho.
+     *
+     * <p>Conteúdo usado numa etapa de trilha não pode voltar a rascunho: a
+     * etapa ficaria apontando para material invisível ao colaborador.</p>
+     */
+    @Transactional
+    public ConteudoResponse despublicar(UUID id, UsuarioAutenticado requisitante) {
+        Conteudo conteudo = buscarNoTenant(id, requisitante.getTenantId());
+        if (!conteudo.isPublicado()) {
+            return ConteudoResponse.de(conteudo);
+        }
+        if (trilhaEtapaRepository.existsByConteudoId(conteudo.getId())) {
+            throw new OperacaoNaoPermitidaException(
+                    "Remova o conteúdo das etapas de trilha antes de despublicá-lo: " + conteudo.getTitulo());
+        }
+        conteudo.setStatus(StatusConteudo.RASCUNHO);
+        conteudo.setPublicadoEm(null);
+        ConteudoResponse resposta = ConteudoResponse.de(conteudoRepository.saveAndFlush(conteudo));
+        publisher.publishEvent(new ConteudoDespublicadoEvent(conteudo.getId(), requisitante.getTenantId()));
         return resposta;
     }
 

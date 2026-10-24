@@ -13,12 +13,14 @@ import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusConteudo;
 import com.nexo.entity.Tenant;
 import com.nexo.entity.TipoConteudo;
+import com.nexo.event.ConteudoDespublicadoEvent;
 import com.nexo.event.ConteudoPublicadoEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.AreaRepository;
 import com.nexo.repository.ConteudoRepository;
 import com.nexo.repository.TenantRepository;
+import com.nexo.repository.TrilhaEtapaRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
 import java.time.Clock;
@@ -56,6 +58,9 @@ class ConteudoServiceTest {
     private UsuarioRepository usuarioRepository;
 
     @Mock
+    private TrilhaEtapaRepository trilhaEtapaRepository;
+
+    @Mock
     private ApplicationEventPublisher publisher;
 
     private ConteudoService service;
@@ -67,7 +72,7 @@ class ConteudoServiceTest {
     void prepara() {
         Clock clock = Clock.fixed(Instant.parse("2026-10-11T12:00:00Z"), ZoneId.of("America/Sao_Paulo"));
         service = new ConteudoService(conteudoRepository, conteudoFactory, categoriaService, areaRepository,
-                tenantRepository, usuarioRepository, publisher, clock);
+                tenantRepository, usuarioRepository, trilhaEtapaRepository, publisher, clock);
         tenant = new Tenant();
         ReflectionTestUtils.setField(tenant, "id", UUID.randomUUID());
         admin = usuario(Perfil.ADMIN, tenant.getId());
@@ -116,6 +121,41 @@ class ConteudoServiceTest {
 
         service.publicar(publicado.getId(), admin);
 
+        verify(publisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void despublicarVoltaParaRascunhoEAvisaAIndexacao() {
+        Conteudo publicado = conteudo(StatusConteudo.PUBLICADO, tenant);
+        when(conteudoRepository.findById(publicado.getId())).thenReturn(Optional.of(publicado));
+        when(conteudoRepository.saveAndFlush(publicado)).thenReturn(publicado);
+
+        var resposta = service.despublicar(publicado.getId(), admin);
+
+        assertThat(resposta.status()).isEqualTo(StatusConteudo.RASCUNHO);
+        assertThat(resposta.publicadoEm()).isNull();
+        verify(publisher).publishEvent(eq(new ConteudoDespublicadoEvent(publicado.getId(), tenant.getId())));
+    }
+
+    @Test
+    void despublicarRascunhoNaoRepeteOEvento() {
+        Conteudo rascunho = conteudo(StatusConteudo.RASCUNHO, tenant);
+        when(conteudoRepository.findById(rascunho.getId())).thenReturn(Optional.of(rascunho));
+
+        service.despublicar(rascunho.getId(), admin);
+
+        verify(publisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void naoDespublicaConteudoUsadoEmEtapa() {
+        Conteudo publicado = conteudo(StatusConteudo.PUBLICADO, tenant);
+        when(conteudoRepository.findById(publicado.getId())).thenReturn(Optional.of(publicado));
+        when(trilhaEtapaRepository.existsByConteudoId(publicado.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.despublicar(publicado.getId(), admin))
+                .isInstanceOf(OperacaoNaoPermitidaException.class);
+        assertThat(publicado.getStatus()).isEqualTo(StatusConteudo.PUBLICADO);
         verify(publisher, never()).publishEvent(any());
     }
 

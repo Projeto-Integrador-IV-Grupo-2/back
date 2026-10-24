@@ -73,6 +73,29 @@ app:
     oembed-url: ${VIMEO_OEMBED_URL:https://vimeo.com/api/oembed.json}
     timeout: ${VIMEO_TIMEOUT:PT5S}
 
+  # ---- Assistente de IA (Google Gemini) ----
+  # Sem IA_API_KEY a aplicação sobe normalmente; só as rotas de IA respondem 503.
+  ia:
+    provedor: ${IA_PROVEDOR:gemini}             # gemini | fake
+    api-key: ${IA_API_KEY:}
+    url-base: ${IA_URL_BASE:https://generativelanguage.googleapis.com/v1beta}
+    modelo: ${IA_MODELO:gemini-2.5-flash}
+    modelo-embedding: ${IA_MODELO_EMBEDDING:gemini-embedding-001}
+    dimensoes: 768                              # fixo: é o tamanho da coluna vector(768) da V14
+    timeout: ${IA_TIMEOUT:PT20S}
+    max-tentativas: ${IA_MAX_TENTATIVAS:3}
+    indexacao:
+      tamanho-trecho: ${IA_TAMANHO_TRECHO:1000}
+      sobreposicao: ${IA_SOBREPOSICAO_TRECHO:200}
+      max-tentativas: ${IA_INDEXACAO_MAX_TENTATIVAS:5}
+      intervalo-nova-tentativa: ${IA_INDEXACAO_INTERVALO:PT5M}
+    busca:
+      trechos: ${IA_BUSCA_TRECHOS:5}
+      distancia-maxima: ${IA_BUSCA_DISTANCIA_MAXIMA:0.6}
+    consulta:
+      perguntas-por-minuto: ${IA_PERGUNTAS_POR_MINUTO:10}
+      mensagens-historico: ${IA_MENSAGENS_HISTORICO:6}
+
 logging:
   level:
     root: INFO
@@ -119,7 +142,8 @@ spring:
     activate:
       on-profile: test
   datasource:
-    url: jdbc:tc:postgresql:16:///nexo_test
+    # Imagem com pgvector (pgvector/pgvector:pg16): a V14 cria a extensão vector.
+    url: jdbc:tc:pgvector:pg16:///nexo_test
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
   flyway:
     locations: classpath:db/migration,classpath:db/seed
@@ -129,6 +153,9 @@ spring:
 app:
   jwt:
     secret: nexo-chave-de-teste-automatizado-nao-use-em-producao
+  # Os testes nunca chamam o provedor real: o ClienteIaFake gera embeddings e respostas determinísticos.
+  ia:
+    provedor: fake
 
 logging:
   level:

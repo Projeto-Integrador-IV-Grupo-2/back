@@ -1,0 +1,66 @@
+package com.nexo.ia;
+
+import java.text.Normalizer;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * {@link ClienteIa} determinístico, sem rede — usado no perfil {@code test}
+ * ({@code app.ia.provedor=fake}).
+ *
+ * <p>O embedding é um "saco de palavras" com hash: cada palavra (sem acento,
+ * em minúsculas, com 3+ letras) soma 1 numa das dimensões, e o vetor é
+ * normalizado. Textos que dividem palavras ficam próximos na distância de
+ * cosseno, então a busca por similaridade funciona de verdade nos testes.</p>
+ *
+ * <p>A resposta repete quantos documentos recebeu, para os testes conferirem
+ * que o contexto chegou ao modelo.</p>
+ */
+public class ClienteIaFake implements ClienteIa {
+
+    public static final String PREFIXO_RESPOSTA = "Resposta simulada";
+
+    private final int dimensoes;
+
+    public ClienteIaFake(int dimensoes) {
+        this.dimensoes = dimensoes;
+    }
+
+    @Override
+    public RespostaIa gerarResposta(String promptSistema, List<MensagemIa> mensagens) {
+        String ultima = mensagens.isEmpty() ? "" : mensagens.get(mensagens.size() - 1).texto();
+        int documentos = ultima.split("<documento ", -1).length - 1;
+        return new RespostaIa(PREFIXO_RESPOSTA + " com base em " + documentos + " trecho(s).", 0, 0);
+    }
+
+    @Override
+    public List<float[]> gerarEmbeddings(List<String> textos, FinalidadeEmbedding finalidade) {
+        return textos.stream().map(this::vetorDe).toList();
+    }
+
+    private float[] vetorDe(String texto) {
+        float[] vetor = new float[dimensoes];
+        String normalizado = Normalizer.normalize(texto == null ? "" : texto, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT);
+        for (String palavra : normalizado.split("[^a-z0-9]+")) {
+            if (palavra.length() >= 3) {
+                vetor[Math.floorMod(palavra.hashCode(), dimensoes)] += 1f;
+            }
+        }
+        double norma = 0;
+        for (float valor : vetor) {
+            norma += valor * valor;
+        }
+        if (norma == 0) {
+            // Texto sem palavras: vetor fixo, para nunca gravar vetor nulo (cosseno indefinido).
+            vetor[0] = 1f;
+            return vetor;
+        }
+        float fator = (float) (1 / Math.sqrt(norma));
+        for (int i = 0; i < vetor.length; i++) {
+            vetor[i] *= fator;
+        }
+        return vetor;
+    }
+}

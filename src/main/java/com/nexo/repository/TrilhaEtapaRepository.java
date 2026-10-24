@@ -15,6 +15,8 @@ public interface TrilhaEtapaRepository extends JpaRepository<TrilhaEtapa, UUID> 
 
     long countByTrilhaId(UUID trilhaId);
 
+    boolean existsByConteudoId(UUID conteudoId);
+
     /** Maior ordem ocupada na trilha; 0 quando ela ainda não tem etapas. */
     @Query("select coalesce(max(e.ordem), 0) from TrilhaEtapa e where e.trilha.id = :trilhaId")
     int maiorOrdem(@Param("trilhaId") UUID trilhaId);
