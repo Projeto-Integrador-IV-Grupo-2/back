@@ -1,11 +1,13 @@
 package com.nexo.service.assistente;
 
+import com.nexo.dto.assistente.MensagemResponse;
 import com.nexo.dto.assistente.SessaoResponse;
 import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
 import com.nexo.entity.ContextoChat;
 import com.nexo.entity.FonteMensagem;
 import com.nexo.entity.PapelMensagem;
+import com.nexo.event.MensagemRegistradaEvent;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.ChatMensagemRepository;
 import com.nexo.repository.ChatSessaoRepository;
@@ -16,15 +18,25 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Sessões e mensagens do assistente (base da issue #59).
+ * Sessões e mensagens do assistente (issue #59).
  *
  * <p>Escopo por tenant <strong>e</strong> por usuário: sessão de outra pessoa
- * — inclusive para o admin — responde 404, como se não existisse.</p>
+ * — inclusive para o admin — responde 404, como se não existisse. Toda
+ * operação parte de {@link #buscarDoUsuario}, então não há caminho que alcance
+ * a conversa alheia.</p>
+ *
+ * <p>Observer: gravar a troca não mexe na sessão. Quem atualiza
+ * {@code ultima_interacao} e dá título à conversa é o
+ * {@code SessaoDoChatListener}, a partir do {@link MensagemRegistradaEvent}
+ * publicado aqui.</p>
  *
  * <p>Singleton sem estado.</p>
  */
@@ -33,12 +45,14 @@ public class ChatSessaoService {
 
     private final ChatSessaoRepository sessaoRepository;
     private final ChatMensagemRepository mensagemRepository;
+    private final ApplicationEventPublisher publisher;
     private final Clock clock;
 
     public ChatSessaoService(ChatSessaoRepository sessaoRepository, ChatMensagemRepository mensagemRepository,
-                             Clock clock) {
+                             ApplicationEventPublisher publisher, Clock clock) {
         this.sessaoRepository = sessaoRepository;
         this.mensagemRepository = mensagemRepository;
+        this.publisher = publisher;
         this.clock = clock;
     }
 
@@ -49,11 +63,45 @@ public class ChatSessaoService {
         return SessaoResponse.de(sessaoRepository.save(sessao));
     }
 
+    /** Conversas do usuário autenticado, da mais recente para a mais antiga. */
+    @Transactional(readOnly = true)
+    public Page<SessaoResponse> listar(Pageable pagina, UsuarioAutenticado usuario) {
+        return sessaoRepository
+                .findByTenantIdAndUsuarioIdOrderByUltimaInteracaoDesc(usuario.getTenantId(), usuario.getId(),
+                        semOrdenacao(pagina))
+                .map(SessaoResponse::de);
+    }
+
     /** @throws ResourceNotFoundException sessão inexistente, de outro usuário ou de outro tenant */
     @Transactional(readOnly = true)
     public ChatSessao buscarDoUsuario(UUID sessaoId, UsuarioAutenticado usuario) {
         return sessaoRepository.findByIdAndTenantIdAndUsuarioId(sessaoId, usuario.getTenantId(), usuario.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sessão não encontrada: " + sessaoId));
+    }
+
+    /** Histórico completo da conversa, na ordem em que as mensagens foram trocadas. */
+    @Transactional(readOnly = true)
+    public List<MensagemResponse> mensagens(UUID sessaoId, UsuarioAutenticado usuario) {
+        ChatSessao sessao = buscarDoUsuario(sessaoId, usuario);
+        return mensagemRepository.findBySessaoIdOrderByCriadoEm(sessao.getId()).stream()
+                .map(MensagemResponse::de)
+                .toList();
+    }
+
+    /** Troca o título que nasceu da primeira pergunta pelo que o usuário escolheu. */
+    @Transactional
+    public SessaoResponse renomear(UUID sessaoId, String titulo, UsuarioAutenticado usuario) {
+        ChatSessao sessao = buscarDoUsuario(sessaoId, usuario);
+        sessao.renomear(titulo);
+        return SessaoResponse.de(sessaoRepository.save(sessao));
+    }
+
+    /** Apaga a conversa e, junto, todas as mensagens dela. */
+    @Transactional
+    public void apagar(UUID sessaoId, UsuarioAutenticado usuario) {
+        ChatSessao sessao = buscarDoUsuario(sessaoId, usuario);
+        mensagemRepository.apagarDaSessao(sessao.getId());
+        sessaoRepository.delete(sessao);
     }
 
     /** As últimas {@code limite} mensagens da sessão, em ordem cronológica. */
@@ -74,24 +122,32 @@ public class ChatSessaoService {
     }
 
     /**
-     * Grava a pergunta e a resposta juntas — ou nenhuma das duas — e atualiza
-     * a última interação e o título da sessão.
+     * Grava a pergunta e a resposta juntas — ou nenhuma das duas — e publica
+     * {@link MensagemRegistradaEvent}, que atualiza a sessão.
      *
+     * @param sessao sessão já conferida como sendo do usuário autenticado
      * @return a mensagem do assistente
      */
     @Transactional
-    public ChatMensagem registrarTroca(UUID sessaoId, String pergunta, OffsetDateTime momentoPergunta,
+    public ChatMensagem registrarTroca(ChatSessao sessao, String pergunta, OffsetDateTime momentoPergunta,
                                        String resposta, List<FonteMensagem> fontes) {
-        ChatSessao sessao = sessaoRepository.findById(sessaoId)
-                .orElseThrow(() -> new ResourceNotFoundException("Sessão não encontrada: " + sessaoId));
+        UUID sessaoId = sessao.getId();
         OffsetDateTime agora = OffsetDateTime.now(clock);
         // A resposta precisa vir depois da pergunta mesmo com relógio de baixa resolução.
         OffsetDateTime momentoResposta = agora.isAfter(momentoPergunta) ? agora : momentoPergunta.plusNanos(1_000);
         mensagemRepository.save(ChatMensagem.doUsuario(sessaoId, pergunta, momentoPergunta));
         ChatMensagem mensagem = mensagemRepository.save(
                 ChatMensagem.doAssistente(sessaoId, resposta, fontes, momentoResposta));
-        sessao.registrarInteracao(pergunta, momentoResposta);
-        sessaoRepository.save(sessao);
+        publisher.publishEvent(new MensagemRegistradaEvent(sessao.getTenantId(), sessao.getUsuarioId(), sessaoId,
+                mensagem.getId(), pergunta, momentoResposta));
         return mensagem;
+    }
+
+    /**
+     * A ordem da listagem é fixa (mais recente primeiro) e já vem do
+     * repositório; um {@code sort} vindo da query não pode trocá-la.
+     */
+    private static Pageable semOrdenacao(Pageable pagina) {
+        return PageRequest.of(pagina.getPageNumber(), pagina.getPageSize());
     }
 }

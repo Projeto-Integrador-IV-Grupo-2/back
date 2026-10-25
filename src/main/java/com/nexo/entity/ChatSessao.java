@@ -18,7 +18,11 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "chat_sessao")
 public class ChatSessao {
 
+    /** Caracteres da pergunta que viram o título automático da conversa. */
     public static final int TAMANHO_TITULO = 60;
+
+    /** Limite da coluna {@code titulo} — o que o usuário pode escrever ao renomear. */
+    public static final int TAMANHO_MAXIMO_TITULO = 120;
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -65,6 +69,15 @@ public class ChatSessao {
             String limpa = pergunta.strip().replaceAll("\\s+", " ");
             titulo = limpa.length() <= TAMANHO_TITULO ? limpa : limpa.substring(0, TAMANHO_TITULO).strip() + "…";
         }
+    }
+
+    /**
+     * Renomeia a conversa. O texto é normalizado e cortado no limite da
+     * coluna, para o usuário nunca receber 500 por um título comprido.
+     */
+    public void renomear(String novoTitulo) {
+        String limpo = novoTitulo == null ? "" : novoTitulo.strip().replaceAll("\\s+", " ");
+        titulo = limpo.length() <= TAMANHO_MAXIMO_TITULO ? limpo : limpo.substring(0, TAMANHO_MAXIMO_TITULO).strip();
     }
 
     public UUID getId() {

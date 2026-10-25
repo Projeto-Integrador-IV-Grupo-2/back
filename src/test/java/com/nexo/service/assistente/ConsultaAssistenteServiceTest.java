@@ -97,7 +97,7 @@ class ConsultaAssistenteServiceTest {
         assertThat(resposta.fontes()).extracting(f -> f.conteudoId()).containsExactly(ferias, beneficios);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<FonteMensagem>> fontes = ArgumentCaptor.forClass(List.class);
-        verify(chatSessaoService).registrarTroca(eq(sessao.getId()), eq("Quantos dias?"), any(), eq("Trinta dias."),
+        verify(chatSessaoService).registrarTroca(eq(sessao), eq("Quantos dias?"), any(), eq("Trinta dias."),
                 fontes.capture());
         assertThat(fontes.getValue()).hasSize(3);
         verify(publisher).publishEvent(any(PerguntaRespondidaEvent.class));
@@ -172,7 +172,7 @@ class ConsultaAssistenteServiceTest {
         ChatMensagem gravada = ChatMensagem.doAssistente(sessao.getId(), resposta, List.of(),
                 OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC));
         ReflectionTestUtils.setField(gravada, "id", UUID.randomUUID());
-        when(chatSessaoService.registrarTroca(eq(sessao.getId()), anyString(), any(), eq(resposta), anyList()))
+        when(chatSessaoService.registrarTroca(eq(sessao), anyString(), any(), eq(resposta), anyList()))
                 .thenReturn(gravada);
     }
 }

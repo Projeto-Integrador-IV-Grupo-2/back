@@ -96,7 +96,7 @@ public class ConsultaAssistenteService {
         List<FonteMensagem> fontes = encontrados.stream()
                 .map(trecho -> new FonteMensagem(trecho.conteudoId(), trecho.titulo(), trecho.chunkId(), trecho.ordem()))
                 .toList();
-        ChatMensagem mensagem = chatSessaoService.registrarTroca(sessaoId, texto, agora, resposta, fontes);
+        ChatMensagem mensagem = chatSessaoService.registrarTroca(sessao, texto, agora, resposta, fontes);
         List<FonteResponse> documentos = documentosDistintos(encontrados);
 
         publisher.publishEvent(new PerguntaRespondidaEvent(usuario.getTenantId(), usuario.getId(), sessaoId,

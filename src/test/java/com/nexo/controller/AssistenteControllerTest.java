@@ -6,6 +6,8 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -213,6 +215,115 @@ class AssistenteControllerTest {
     @Test
     void semTokenResponde401() throws Exception {
         mockMvc.perform(post("/api/assistente/sessoes")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/assistente/sessoes")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void listaSoAsSessoesDoProprioUsuarioDaMaisRecenteParaAMaisAntiga() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID primeira = criaSessao(tokenColaborador);
+        UUID segunda = criaSessao(tokenColaborador);
+        criaSessao(tokenAdmin);
+        mockMvc.perform(pergunta(primeira, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+        mockMvc.perform(pergunta(segunda, "E quando posso tirar as férias?", tokenColaborador))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(comToken(get("/api/assistente/sessoes"), tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[0].id").value(segunda.toString()))
+                .andExpect(jsonPath("$.content[1].id").value(primeira.toString()))
+                .andExpect(jsonPath("$.content[0].titulo").value("E quando posso tirar as férias?"));
+    }
+
+    @Test
+    void asMensagensVoltamNaOrdemEmQueForamTrocadas() throws Exception {
+        UUID ferias = publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(comToken(get("/api/assistente/sessoes/{id}/mensagens", sessaoId), tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].papel").value("USUARIO"))
+                .andExpect(jsonPath("$[0].conteudo").value("Quantos dias de férias o colaborador tem?"))
+                .andExpect(jsonPath("$[0].fontes", hasSize(0)))
+                .andExpect(jsonPath("$[1].papel").value("ASSISTENTE"))
+                .andExpect(jsonPath("$[1].fontes[0].conteudoId").value(ferias.toString()));
+    }
+
+    @Test
+    void ultimaInteracaoMudaACadaMensagemNova() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+        OffsetDateTime aoCriar = chatSessaoRepository.findById(sessaoId).orElseThrow().getUltimaInteracao();
+
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+
+        assertThat(chatSessaoRepository.findById(sessaoId).orElseThrow().getUltimaInteracao()).isAfter(aoCriar);
+    }
+
+    @Test
+    void renomeiaAConversaEscolhidaPeloUsuario() throws Exception {
+        UUID sessaoId = criaSessao(tokenColaborador);
+
+        mockMvc.perform(comToken(patch("/api/assistente/sessoes/{id}", sessaoId), tokenColaborador)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("titulo", "Dúvidas de RH"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.titulo").value("Dúvidas de RH"));
+
+        assertThat(chatSessaoRepository.findById(sessaoId).orElseThrow().getTitulo()).isEqualTo("Dúvidas de RH");
+    }
+
+    @Test
+    void renomearComTituloVazioOuGrandeDemaisResponde400() throws Exception {
+        UUID sessaoId = criaSessao(tokenColaborador);
+
+        mockMvc.perform(renomear(sessaoId, "   ", tokenColaborador))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("titulo"));
+        mockMvc.perform(renomear(sessaoId, "a".repeat(121), tokenColaborador))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("titulo"));
+    }
+
+    @Test
+    void apagarASessaoApagaAsMensagensDela() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+        assertThat(chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId)).isNotEmpty();
+
+        mockMvc.perform(comToken(delete("/api/assistente/sessoes/{id}", sessaoId), tokenColaborador))
+                .andExpect(status().isNoContent());
+
+        assertThat(chatSessaoRepository.findById(sessaoId)).isEmpty();
+        assertThat(chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId)).isEmpty();
+    }
+
+    @Test
+    void conversaDeOutroUsuarioResponde404EmTodasAsRotas() throws Exception {
+        UUID doColaborador = criaSessao(tokenColaborador);
+
+        mockMvc.perform(comToken(get("/api/assistente/sessoes/{id}/mensagens", doColaborador), tokenAdmin))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(renomear(doColaborador, "Tentativa", tokenAdmin))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(comToken(delete("/api/assistente/sessoes/{id}", doColaborador), tokenAdmin))
+                .andExpect(status().isNotFound());
+
+        assertThat(chatSessaoRepository.findById(doColaborador)).isPresent();
+    }
+
+    private MockHttpServletRequestBuilder renomear(UUID sessaoId, String titulo, String token) throws Exception {
+        return comToken(patch("/api/assistente/sessoes/{id}", sessaoId), token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("titulo", titulo)));
     }
 
     private UUID publicaEIndexa(String titulo, String corpo) throws Exception {

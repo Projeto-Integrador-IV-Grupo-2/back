@@ -422,9 +422,15 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 | Endpoint | Acesso | O que faz |
 |---|---|---|
 | `POST /api/assistente/sessoes` | autenticado | Cria uma sessão de conversa. Corpo opcional `{"contexto": "CONHECIMENTO"}`, que já é o padrão |
+| `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga (`ultima_interacao`). A ordem é fixa: `sort` na query é ignorado |
 | `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"pergunta": "..."}` com até 2000 caracteres. Devolve `resposta`, `fontes` (`conteudoId` e `titulo` de cada documento usado), `mensagemId` e `criadoEm` |
+| `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `papel`, `conteudo`, `fontes` e `criadoEm` |
+| `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 120 caracteres — troca o título que nasceu da primeira pergunta |
+| `DELETE /api/assistente/sessoes/{id}` | autenticado | **204**. Apaga a conversa e, junto, todas as mensagens dela |
 
-Listar, renomear e apagar sessões e ler o histórico ficam para a issue #59.
+**Cada um só enxerga as próprias conversas — inclusive o admin.** Sessão de
+outra pessoa ou de outro tenant responde **404** em todas as rotas acima, como
+se não existisse.
 
 O fluxo de uma pergunta é este:
 
@@ -444,8 +450,12 @@ O fluxo de uma pergunta é este:
    `<documento>` vindas do próprio texto são neutralizadas.
 6. A pergunta e a resposta são gravadas **juntas** em `chat_mensagem`, com os
    trechos usados em `fontes` (JSON). Se o provedor cair, a resposta é **503** e
-   nada fica gravado pela metade. A primeira pergunta vira o título da sessão.
-7. A API publica `PerguntaRespondidaEvent`, ponto de extensão para o
+   nada fica gravado pela metade.
+7. A gravação publica `MensagemRegistradaEvent`. O `SessaoDoChatListener`
+   escuta e é quem atualiza `ultima_interacao` e dá título à conversa a partir
+   do começo da primeira pergunta — o service que grava a mensagem não mexe na
+   sessão. É o mesmo gancho para alimentar o `historico_interacao`.
+8. A API publica também `PerguntaRespondidaEvent`, ponto de extensão para o
    `historico_interacao` da issue #48.
 
 Perguntas e respostas **não vão para o log** da aplicação. Resposta em
