@@ -427,8 +427,9 @@ com o seu embedding:
 2. O `IndexadorDeConteudoListener` escuta esses eventos **depois do commit** e
    **fora da requisição** (`@TransactionalEventListener` + `@Async`). O cadastro
    de conteúdos não conhece a indexação.
-3. O `IndexacaoService` junta o texto das `FonteDeTextoDoConteudo`. Hoje a
-   única fonte é `CamposDoConteudo`, com título, descrição e corpo.
+3. O `IndexacaoService` junta o texto das `FonteDeTextoDoConteudo`, nesta
+   ordem: `CamposDoConteudo` (título, descrição e corpo) e `ArquivosDoConteudo`
+   (texto dos arquivos anexados, na ordem de envio).
 4. O `DivisorDeTexto` corta o texto em trechos de até `IA_TAMANHO_TRECHO`
    caracteres, com `IA_SOBREPOSICAO_TRECHO` de sobreposição. O corte cai, de
    preferência, em fim de parágrafo ou de frase.
@@ -445,13 +446,20 @@ e último erro. A `RotinaDeReindexacao` tenta de novo a cada minuto, com espera
 que dobra a cada falha, até `IA_INDEXACAO_MAX_TENTATIVAS`.
 
 **Extração de arquivos:** a `ExtratorDeTextoFactory` entrega o extrator pelo
-tipo MIME: PDF (PDFBox), DOCX (Apache POI), TXT e MD (UTF-8). Quando a issue #55
-criar a tabela `arquivo`, falta só uma `FonteDeTextoDoConteudo` que leia os
-arquivos do armazenamento e use a factory.
+tipo MIME: PDF (PDFBox), DOCX (Apache POI), TXT e MD (UTF-8). A
+`ArquivosDoConteudo` lê cada arquivo do armazenamento e pede o extrator à
+factory. Um formato novo é só mais um `ExtratorDeTexto` (`@Component`).
 
 **Busca:** o `BuscaDeTrechosService` compara o embedding da pergunta com os
 trechos usando a distância de cosseno do pgvector (`<=>`). Trechos mais
 distantes que `IA_BUSCA_DISTANCIA_MAXIMA` são descartados.
+
+**Testes:** `DivisorDeTextoTest` (tamanho, sobreposição e ordem),
+`BuscaDeTrechosServiceTest` (busca com o `ClienteIaFake`),
+`ExtratorDeTextoFactoryTest`, `ArquivosDoConteudoTest` e
+`IndexacaoServiceTest` (falha registrada e nova tentativa), além dos testes de
+integração `IndexacaoIntegrationTest` e `DocumentoIndexacaoIntegrationTest`
+(publicar, editar, despublicar, isolamento por tenant e arquivo ilegível).
 
 **Por que pgvector:** a similaridade roda no próprio PostgreSQL, com índice
 HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
