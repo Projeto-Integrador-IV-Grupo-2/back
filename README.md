@@ -274,6 +274,52 @@ Filtros de `GET /api/trilhas`, todos opcionais e combináveis:
 | `status` | Status do **meu** progresso: `NAO_INICIADA` (inclui as que nunca iniciei), `EM_ANDAMENTO`, `CONCLUIDA`, `ATRASADA` |
 | `minhas=true` | Só as trilhas que iniciei ou recebi; aceita `sort=prazo` (sem prazo no fim) |
 | `recomendar=AREA` | Trilhas da minha área primeiro; a ordenação pedida vale entre elas |
+| `recomendar=IA` | Trilhas que a IA indicou primeiro, na ordem dela. Usa só o que já foi calculado por `GET /api/trilhas/sugestoes`: **ordenar uma página nunca chama o modelo**. Sem nada guardado, a ordem não muda |
+
+### Sugestão de trilhas pela IA
+
+`GET /api/trilhas/sugestoes` (qualquer autenticado) devolve até
+`IA_SUGESTAO_MAXIMO` trilhas, cada uma com um motivo curto em português:
+
+```json
+{
+  "geradoPorIa": true,
+  "aviso": null,
+  "sugestoes": [
+    {
+      "id": "…", "nome": "Atendimento ao Cliente",
+      "area": { "id": "…", "nome": "Suporte" },
+      "objetivos": "Resolver conflitos",
+      "motivo": "Você atende clientes todo dia e ainda não fez esta trilha."
+    }
+  ]
+}
+```
+
+É diferente de `recomendar=AREA`, que só reordena a listagem sem usar IA. Aqui:
+
+1. O catálogo enviado ao modelo são as trilhas **ativas do tenant que o usuário
+   ainda não concluiu** (id, nome, área e objetivos). Nenhuma trilha de outra
+   empresa entra no prompt.
+2. O perfil enviado é **só** área, cargo, trilhas concluídas e em andamento e
+   as competências do PDI ativo. Nome, e-mail e ids do usuário ficam de fora.
+3. O texto das trilhas é **dado, nunca instrução**: marcações `<catalogo>`,
+   `<perfil>` e `<trilha>` vindas do cadastro são neutralizadas.
+4. **Só id que estava no catálogo enviado é aceito.** Id inventado pelo modelo é
+   descartado em silêncio, então nunca aparece trilha inexistente, inativa, de
+   outro tenant ou já concluída.
+5. O resultado fica guardado por usuário por `IA_SUGESTAO_VALIDADE`: dois
+   acessos seguidos chamam o modelo uma vez só. Iniciar ou concluir uma trilha
+   publica um evento que o `SugestoesDeTrilhaListener` usa para invalidar o
+   que estava guardado.
+6. **Com a IA fora do ar** — ou com uma resposta que não rendeu nenhuma trilha
+   válida — a resposta continua **200**, com `geradoPorIa: false`, o `aviso`
+   preenchido e a recomendação por área no lugar.
+
+As duas formas de recomendar são estratégias do mesmo tipo
+(`EstrategiaRecomendacao`), registradas na `EstrategiaRecomendacaoFactory`:
+cair da IA para a área é escolher outro critério, não um `if` espalhado pelo
+service.
 
 ### Atribuição
 
@@ -372,7 +418,10 @@ até `IA_MAX_TENTATIVAS` tentativas, com espera crescente. A chave vai só no
 header da chamada: nunca entra em log nem em resposta.
 
 Nos testes (`IA_PROVEDOR=fake`, já definido no perfil `test`), o
-`ClienteIaFake` gera embeddings e respostas determinísticos, sem rede.
+`ClienteIaFake` gera embeddings e respostas determinísticos, sem rede. Ele
+reconhece o prompt da sugestão de trilhas e responde o JSON daquele fluxo,
+escolhendo as primeiras trilhas do catálogo recebido — então
+`GET /api/trilhas/sugestoes` funciona de ponta a ponta com o provedor `fake`.
 
 ### Indexação dos documentos
 
@@ -637,6 +686,9 @@ define-se a variável e ela prevalece.
 | `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
 | `IA_PERGUNTAS_POR_MINUTO` | `10` | Perguntas ao assistente aceitas por usuário a cada minuto |
 | `IA_MENSAGENS_HISTORICO` | `6` | Mensagens anteriores da sessão que entram no prompt |
+| `IA_SUGESTAO_MAXIMO` | `5` | Trilhas que a IA pode indicar de uma vez |
+| `IA_SUGESTAO_CATALOGO_MAXIMO` | `60` | Teto de trilhas enviadas ao modelo no prompt da sugestão |
+| `IA_SUGESTAO_VALIDADE` | `PT15M` | Por quanto tempo a sugestão de um usuário fica guardada |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 

@@ -6,12 +6,14 @@ import com.nexo.dto.trilha.AtualizarProgressoRequest;
 import com.nexo.dto.trilha.AtualizarTrilhaRequest;
 import com.nexo.dto.trilha.CriarTrilhaRequest;
 import com.nexo.dto.trilha.ProgressoTrilhaResponse;
+import com.nexo.dto.trilha.SugestoesDeTrilhaResponse;
 import com.nexo.dto.trilha.TrilhaDetalheResponse;
 import com.nexo.dto.trilha.TrilhaResumoResponse;
 import com.nexo.repository.TrilhaFiltro;
 import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.TrilhaAtribuicaoService;
 import com.nexo.service.TrilhaService;
+import com.nexo.service.recomendacao.SugestaoDeTrilhasService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
@@ -52,10 +54,28 @@ public class TrilhaController {
 
     private final TrilhaService trilhaService;
     private final TrilhaAtribuicaoService trilhaAtribuicaoService;
+    private final SugestaoDeTrilhasService sugestaoDeTrilhasService;
 
-    public TrilhaController(TrilhaService trilhaService, TrilhaAtribuicaoService trilhaAtribuicaoService) {
+    public TrilhaController(TrilhaService trilhaService,
+                            TrilhaAtribuicaoService trilhaAtribuicaoService,
+                            SugestaoDeTrilhasService sugestaoDeTrilhasService) {
         this.trilhaService = trilhaService;
         this.trilhaAtribuicaoService = trilhaAtribuicaoService;
+        this.sugestaoDeTrilhasService = sugestaoDeTrilhasService;
+    }
+
+    /**
+     * Até cinco trilhas indicadas pela IA para o usuário autenticado, cada uma
+     * com o motivo da indicação (issue #63).
+     *
+     * <p>Diferente de {@code ?recomendar=AREA}, que só reordena a listagem:
+     * aqui o modelo escolhe entre as trilhas ativas do tenant que o usuário
+     * ainda não concluiu. Com a IA fora do ar a resposta continua **200**, com
+     * a recomendação por área e {@code geradoPorIa: false}.</p>
+     */
+    @GetMapping("/sugestoes")
+    public SugestoesDeTrilhaResponse sugestoes(@AuthenticationPrincipal UsuarioAutenticado usuario) {
+        return sugestaoDeTrilhasService.sugerir(usuario);
     }
 
     /**

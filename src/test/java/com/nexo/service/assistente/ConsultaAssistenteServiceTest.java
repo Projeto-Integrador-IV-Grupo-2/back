@@ -67,7 +67,7 @@ class ConsultaAssistenteServiceTest {
     @BeforeEach
     void prepara() {
         IaProperties properties = new IaProperties("fake", null, null, null, null, null, null, null, null,
-                new IaProperties.Busca(5, 0.6), new IaProperties.Consulta(3, 6));
+                new IaProperties.Busca(5, 0.6), new IaProperties.Consulta(3, 6), null);
         service = new ConsultaAssistenteService(chatSessaoService, buscaDeTrechosService,
                 new MontadorDePromptFactory(List.of(new MontadorDePromptConhecimento())), clienteIa, publisher,
                 Clock.fixed(AGORA, ZoneOffset.UTC), properties);

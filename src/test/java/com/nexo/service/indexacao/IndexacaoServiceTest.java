@@ -65,7 +65,7 @@ class IndexacaoServiceTest {
     @BeforeEach
     void prepara() {
         IaProperties properties = new IaProperties("fake", null, null, null, null, 768, null, null,
-                new IaProperties.Indexacao(100, 20, 3, Duration.ofMinutes(5)), null, null);
+                new IaProperties.Indexacao(100, 20, 3, Duration.ofMinutes(5)), null, null, null);
         service = new IndexacaoService(conteudoRepository, chunkRepository, indexacaoRepository,
                 List.of(new CamposDoConteudo()), new DivisorDeTexto(properties), clienteIa, transactionManager,
                 properties, Clock.fixed(AGORA, ZoneOffset.UTC));
