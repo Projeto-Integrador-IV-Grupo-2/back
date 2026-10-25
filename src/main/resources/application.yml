@@ -103,6 +103,10 @@ app:
     consulta:
       perguntas-por-minuto: ${IA_PERGUNTAS_POR_MINUTO:10}
       mensagens-historico: ${IA_MENSAGENS_HISTORICO:6}
+    sugestao:
+      maximo: ${IA_SUGESTAO_MAXIMO:5}
+      catalogo-maximo: ${IA_SUGESTAO_CATALOGO_MAXIMO:60}
+      validade: ${IA_SUGESTAO_VALIDADE:PT15M}
 
   # ---- Documentos (tela de Conhecimento) ----
   # Só PDF, DOCX, TXT e MD; o tipo é conferido pelo conteúdo do arquivo.

@@ -3,6 +3,8 @@ package com.nexo.ia;
 import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * {@link ClienteIa} determinístico, sem rede — usado no perfil {@code test}
@@ -14,11 +16,20 @@ import java.util.Locale;
  * cosseno, então a busca por similaridade funciona de verdade nos testes.</p>
  *
  * <p>A resposta repete quantos documentos recebeu, para os testes conferirem
- * que o contexto chegou ao modelo.</p>
+ * que o contexto chegou ao modelo. Diante do prompt de sugestão de trilhas
+ * (issue #63), responde o JSON que aquele fluxo espera, escolhendo as
+ * primeiras trilhas do catálogo recebido — assim o endpoint funciona de ponta
+ * a ponta com {@code app.ia.provedor=fake}, sem rede.</p>
  */
 public class ClienteIaFake implements ClienteIa {
 
     public static final String PREFIXO_RESPOSTA = "Resposta simulada";
+
+    public static final String MOTIVO_SIMULADO = "Sugestão simulada a partir do catálogo recebido.";
+
+    private static final Pattern ID_DE_TRILHA = Pattern.compile("<trilha id=\"([^\"]+)\"");
+
+    private static final Pattern LIMITE_PEDIDO = Pattern.compile("Indique no máximo (\\d+) trilhas");
 
     private final int dimensoes;
 
@@ -29,8 +40,29 @@ public class ClienteIaFake implements ClienteIa {
     @Override
     public RespostaIa gerarResposta(String promptSistema, List<MensagemIa> mensagens) {
         String ultima = mensagens.isEmpty() ? "" : mensagens.get(mensagens.size() - 1).texto();
+        if (ultima.contains("<catalogo>")) {
+            return new RespostaIa(sugestoesDoCatalogo(ultima), 0, 0);
+        }
         int documentos = ultima.split("<documento ", -1).length - 1;
         return new RespostaIa(PREFIXO_RESPOSTA + " com base em " + documentos + " trecho(s).", 0, 0);
+    }
+
+    /** JSON com as primeiras trilhas do catálogo, respeitando o limite pedido no prompt. */
+    private static String sugestoesDoCatalogo(String turno) {
+        Matcher limite = LIMITE_PEDIDO.matcher(turno);
+        int maximo = limite.find() ? Integer.parseInt(limite.group(1)) : 5;
+        StringBuilder json = new StringBuilder("{\"sugestoes\":[");
+        Matcher ids = ID_DE_TRILHA.matcher(turno);
+        int escolhidas = 0;
+        while (escolhidas < maximo && ids.find()) {
+            if (escolhidas > 0) {
+                json.append(',');
+            }
+            json.append("{\"id\":\"").append(ids.group(1))
+                    .append("\",\"motivo\":\"").append(MOTIVO_SIMULADO).append("\"}");
+            escolhidas++;
+        }
+        return json.append("]}").toString();
     }
 
     @Override

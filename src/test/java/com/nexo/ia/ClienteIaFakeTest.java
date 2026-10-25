@@ -35,6 +35,34 @@ class ClienteIaFakeTest {
         assertThat(resposta.texto()).startsWith(ClienteIaFake.PREFIXO_RESPOSTA).contains("2 trecho(s)");
     }
 
+    @Test
+    void dianteDoCatalogoDeTrilhasRespondeOJsonDeSugestoes() {
+        String turno = """
+                <catalogo>
+                <trilha id="11111111-1111-1111-1111-111111111111">
+                Nome: Atendimento
+                </trilha>
+                <trilha id="22222222-2222-2222-2222-222222222222">
+                Nome: LGPD
+                </trilha>
+                <trilha id="33333333-3333-3333-3333-333333333333">
+                Nome: Negociação
+                </trilha>
+                </catalogo>
+
+                Indique no máximo 2 trilhas para este colaborador.""";
+
+        String resposta = fake.gerarResposta("sistema", List.of(MensagemIa.doUsuario(turno))).texto();
+
+        assertThat(resposta)
+                .startsWith("{\"sugestoes\":[")
+                .contains("11111111-1111-1111-1111-111111111111")
+                .contains("22222222-2222-2222-2222-222222222222")
+                .contains(ClienteIaFake.MOTIVO_SIMULADO)
+                // Respeita o limite pedido no prompt.
+                .doesNotContain("33333333-3333-3333-3333-333333333333");
+    }
+
     private static double cosseno(float[] a, float[] b) {
         double produto = 0;
         double normaA = 0;

@@ -161,7 +161,8 @@ public class TrilhaService {
             return null;
         }
         EstrategiaRecomendacao estrategia = recomendacoes.para(criterio);
-        EstrategiaRecomendacao.Contexto contexto = new EstrategiaRecomendacao.Contexto(areaDoUsuario(requisitante));
+        EstrategiaRecomendacao.Contexto contexto = new EstrategiaRecomendacao.Contexto(
+                requisitante.getTenantId(), requisitante.getId(), areaDoUsuario(requisitante));
         return (trilha, cb) -> estrategia.prioridade(trilha, cb, contexto);
     }
 
