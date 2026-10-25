@@ -27,6 +27,14 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
 
+  # Upload de documentos: o limite do multipart acompanha o tamanho máximo do
+  # arquivo (app.documentos.tamanho-maximo); a requisição tem uma folga para
+  # os outros campos do formulário.
+  servlet:
+    multipart:
+      max-file-size: ${DOCUMENTOS_TAMANHO_MAXIMO:10MB}
+      max-request-size: ${DOCUMENTOS_TAMANHO_MAXIMO_REQUISICAO:12MB}
+
 server:
   port: ${SERVER_PORT:8080}
 
@@ -100,6 +108,18 @@ app:
       catalogo-maximo: ${IA_SUGESTAO_CATALOGO_MAXIMO:60}
       validade: ${IA_SUGESTAO_VALIDADE:PT15M}
 
+  # ---- Documentos (tela de Conhecimento) ----
+  # Só PDF, DOCX, TXT e MD; o tipo é conferido pelo conteúdo do arquivo.
+  documentos:
+    tamanho-maximo: ${DOCUMENTOS_TAMANHO_MAXIMO:10MB}
+
+  # ---- Armazenamento dos arquivos ----
+  # Os binários ficam fora do banco. "local" grava numa pasta do servidor; um
+  # armazenamento em nuvem entra como outro tipo, sem mudar quem usa.
+  armazenamento:
+    tipo: ${ARMAZENAMENTO_TIPO:local}
+    diretorio: ${ARMAZENAMENTO_DIRETORIO:./data/arquivos}
+
 logging:
   level:
     root: INFO
@@ -160,6 +180,9 @@ app:
   # Os testes nunca chamam o provedor real: o ClienteIaFake gera embeddings e respostas determinísticos.
   ia:
     provedor: fake
+  # Cada execução de testes grava numa pasta temporária, nunca no projeto.
+  armazenamento:
+    diretorio: ${java.io.tmpdir}/nexo-arquivos-teste
 
 logging:
   level:
