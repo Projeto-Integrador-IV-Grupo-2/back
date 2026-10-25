@@ -321,6 +321,15 @@ As duas formas de recomendar são estratégias do mesmo tipo
 cair da IA para a área é escolher outro critério, não um `if` espalhado pelo
 service.
 
+**O banco é lido antes, não durante.** O `ColetorDeDadosDaSugestao` monta o
+catálogo e o perfil numa transação curta e devolve records desligados do JPA
+(`TrilhaCandidata`, `PerfilDoUsuario`); a transação fecha e só então o modelo
+é consultado. Uma chamada pode levar `IA_TIMEOUT` × `IA_MAX_TENTATIVAS`, e
+segurar uma conexão do pool por esse tempo esgotaria o Hikari sob carga — a
+mesma razão pela qual o `ConsultaAssistenteService` não é transacional. Por
+isso a `RecomendacaoPorIa` não conhece repository nenhum: recebendo só
+records, não há lazy loading possível fora da transação.
+
 ### Atribuição
 
 O corpo leva **ou** `usuarioIds` **ou** `areaId` — nunca os dois (400 se vierem

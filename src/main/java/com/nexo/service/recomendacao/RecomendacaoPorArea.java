@@ -1,6 +1,5 @@
 package com.nexo.service.recomendacao;
 
-import com.nexo.entity.Area;
 import com.nexo.entity.Trilha;
 import com.nexo.repository.CriterioRecomendacao;
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -41,22 +40,22 @@ public class RecomendacaoPorArea implements EstrategiaRecomendacao {
 
     /** Mesma regra da ordenação, aplicada ao catálogo: área do usuário primeiro, depois por nome. */
     @Override
-    public List<TrilhaSugerida> sugerir(Contexto contexto, List<Trilha> catalogo, int limite) {
+    public List<TrilhaSugerida> sugerir(DadosParaSugestao dados, int limite) {
         if (limite <= 0) {
             return List.of();
         }
-        return catalogo.stream()
+        UUID areaDoUsuario = dados.contexto().areaDoUsuarioId();
+        return dados.catalogo().stream()
                 .sorted(Comparator
-                        .comparingInt((Trilha trilha) -> ehDaArea(trilha, contexto.areaDoUsuarioId()) ? 0 : 1)
-                        .thenComparing(Trilha::getNome, String.CASE_INSENSITIVE_ORDER))
+                        .comparingInt((TrilhaCandidata trilha) -> ehDaArea(trilha, areaDoUsuario) ? 0 : 1)
+                        .thenComparing(TrilhaCandidata::nome, String.CASE_INSENSITIVE_ORDER))
                 .limit(limite)
                 .map(trilha -> new TrilhaSugerida(trilha,
-                        ehDaArea(trilha, contexto.areaDoUsuarioId()) ? MOTIVO_DA_AREA : MOTIVO_GERAL))
+                        ehDaArea(trilha, areaDoUsuario) ? MOTIVO_DA_AREA : MOTIVO_GERAL))
                 .toList();
     }
 
-    private static boolean ehDaArea(Trilha trilha, UUID areaDoUsuarioId) {
-        Area area = trilha.getArea();
-        return areaDoUsuarioId != null && area != null && areaDoUsuarioId.equals(area.getId());
+    private static boolean ehDaArea(TrilhaCandidata trilha, UUID areaDoUsuarioId) {
+        return areaDoUsuarioId != null && areaDoUsuarioId.equals(trilha.areaId());
     }
 }

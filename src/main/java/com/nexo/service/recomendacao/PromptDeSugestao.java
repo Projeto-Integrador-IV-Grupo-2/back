@@ -2,8 +2,6 @@ package com.nexo.service.recomendacao;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nexo.entity.Area;
-import com.nexo.entity.Trilha;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,7 +50,7 @@ final class PromptDeSugestao {
      * O turno do usuário: perfil de quem vai estudar e catálogo de onde o
      * modelo pode escolher.
      */
-    static String turno(PerfilParaSugestao perfil, List<Trilha> catalogo, int limite) {
+    static String turno(PerfilDoUsuario perfil, List<TrilhaCandidata> catalogo, int limite) {
         StringBuilder texto = new StringBuilder("<perfil>\n");
         acrescenta(texto, "Área", perfil.area());
         acrescenta(texto, "Cargo", perfil.cargo());
@@ -60,13 +58,14 @@ final class PromptDeSugestao {
         acrescenta(texto, "Trilhas em andamento", juntar(perfil.trilhasEmAndamento()));
         acrescenta(texto, "Competências do PDI a desenvolver", juntar(perfil.competenciasDoPdi()));
         texto.append("</perfil>\n\n<catalogo>\n");
-        for (Trilha trilha : catalogo) {
-            Area area = trilha.getArea();
-            texto.append("<trilha id=\"").append(trilha.getId()).append("\">\n")
-                    .append("Nome: ").append(neutralizar(trilha.getNome())).append('\n')
-                    .append("Área: ").append(area == null ? "sem área" : neutralizar(area.getNome())).append('\n')
+        for (TrilhaCandidata trilha : catalogo) {
+            texto.append("<trilha id=\"").append(trilha.id()).append("\">\n")
+                    .append("Nome: ").append(neutralizar(trilha.nome())).append('\n')
+                    .append("Área: ")
+                    .append(trilha.areaNome() == null ? "sem área" : neutralizar(trilha.areaNome()))
+                    .append('\n')
                     .append("Objetivos: ")
-                    .append(trilha.getObjetivos() == null ? "não informados" : neutralizar(trilha.getObjetivos()))
+                    .append(trilha.objetivos() == null ? "não informados" : neutralizar(trilha.objetivos()))
                     .append("\n</trilha>\n");
         }
         texto.append("</catalogo>\n\nIndique no máximo ").append(limite)
@@ -162,14 +161,5 @@ final class PromptDeSugestao {
         List<String> limpos = new ArrayList<>(valores.size());
         valores.forEach(valor -> limpos.add(neutralizar(valor)));
         return String.join("; ", limpos);
-    }
-
-    /**
-     * O que o modelo pode saber do colaborador. Só área, cargo, o que ele já
-     * estudou e as competências do PDI — <strong>nunca</strong> nome, e-mail
-     * ou qualquer outro dado pessoal.
-     */
-    record PerfilParaSugestao(String area, String cargo, List<String> trilhasConcluidas,
-                              List<String> trilhasEmAndamento, List<String> competenciasDoPdi) {
     }
 }

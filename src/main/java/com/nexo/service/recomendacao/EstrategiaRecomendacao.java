@@ -30,17 +30,19 @@ public interface EstrategiaRecomendacao {
      * As trilhas mais indicadas para o usuário, cada uma com um motivo curto
      * em português.
      *
-     * @param catalogo trilhas candidatas — já filtradas por tenant, ativas e
-     *                 não concluídas pelo usuário. A estratégia só pode
-     *                 devolver trilhas que estejam aqui.
-     * @param limite   máximo de sugestões
+     * <p>Recebe os dados já lidos do banco, e não repositories: a
+     * implementação que fala com o modelo roda <strong>fora de
+     * transação</strong>, então não pode disparar lazy loading. Só trilhas do
+     * catálogo de {@code dados} podem ser devolvidas.</p>
+     *
+     * @param limite máximo de sugestões
      */
-    List<TrilhaSugerida> sugerir(Contexto contexto, List<Trilha> catalogo, int limite);
+    List<TrilhaSugerida> sugerir(DadosParaSugestao dados, int limite);
 
     /**
-     * Dados do usuário autenticado que as estratégias podem usar. Carrega só
-     * identificadores: o que cada estratégia precisa saber além disso ela
-     * busca por conta própria.
+     * Dados do usuário autenticado que as estratégias usam na ordenação.
+     * Carrega só identificadores; o que o prompt precisa saber vai no
+     * {@link PerfilDoUsuario}.
      */
     record Contexto(UUID tenantId, UUID usuarioId, UUID areaDoUsuarioId) {
     }
