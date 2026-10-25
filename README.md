@@ -330,6 +330,42 @@ mesma razão pela qual o `ConsultaAssistenteService` não é transacional. Por
 isso a `RecomendacaoPorIa` não conhece repository nenhum: recebendo só
 records, não há lazy loading possível fora da transação.
 
+### Ajuda da IA para trilhas
+
+`POST /api/trilhas/sugestoes/ajuda` (qualquer autenticado) recebe um pedido
+livre — `{"pergunta": "Monte uma trilha de LGPD para o time"}`, até 2000
+caracteres — e responde:
+
+```json
+{
+  "texto": "Montei um rascunho de 14 dias focado em dados pessoais no dia a dia.",
+  "rascunho": {
+    "nome": "LGPD na prática",
+    "descricao": "O que são dados pessoais e sensíveis e como tratá-los.",
+    "areaId": null,
+    "prazoDias": 14,
+    "objetivos": "Identificar dados sensíveis; comunicar incidentes em até 24h"
+  }
+}
+```
+
+`rascunho` só vem quando o pedido é para criar, montar ou planejar uma trilha;
+nos outros casos (o que estudar, quais trilhas combinam com o PDI) é `null`.
+O rascunho **não é gravado**: o front abre o cadastro preenchido e quem cria
+revisa e salva pelo `POST /api/trilhas` de sempre, com as validações dele.
+
+- Usa o mesmo `ColetorDeDadosDaSugestao` da sugestão: perfil sem dado pessoal
+  e catálogo de trilhas ativas do tenant que o usuário ainda não concluiu. A IA
+  só cita trilhas desse catálogo.
+- Perfil e catálogo são dado, nunca instrução; o pedido vai entre `<pergunta>`,
+  com as marcações do prompt neutralizadas (inclusive `</pergunta>`).
+- O rascunho que volta do modelo é saneado (`PromptDeAjuda`): campos cortados
+  aos limites do `CriarTrilhaRequest`, prazo fora de 1–365 vira nulo e a área
+  só é aceita se o nome bater com uma área do catálogo.
+- Resposta sem JSON vira o próprio texto, sem rascunho.
+- Mesma regra de transação da sugestão: banco lido antes, modelo depois.
+- IA fora do ar: **503**, como as outras rotas de IA.
+
 ### Atribuição
 
 O corpo leva **ou** `usuarioIds` **ou** `areaId` — nunca os dois (400 se vierem
@@ -473,6 +509,8 @@ Nos testes (`IA_PROVEDOR=fake`, já definido no perfil `test`), o
 reconhece o prompt da sugestão de trilhas e responde o JSON daquele fluxo,
 escolhendo as primeiras trilhas do catálogo recebido — então
 `GET /api/trilhas/sugestoes` funciona de ponta a ponta com o provedor `fake`.
+Também reconhece o pedido da ajuda nas trilhas (`<pergunta>`): pedido para
+criar ou montar uma trilha devolve um rascunho simulado; os outros, só texto.
 
 ### Indexação dos documentos
 
