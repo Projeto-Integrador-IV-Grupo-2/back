@@ -1,15 +1,13 @@
 package com.nexo.dto.assistente;
 
-import java.time.OffsetDateTime;
-import java.util.List;
-import java.util.UUID;
-
 /**
- * Resposta do assistente.
+ * Resposta de {@code POST /api/assistente/sessoes/{id}/mensagens}.
  *
- * @param mensagemId id da resposta em {@code chat_mensagem}
- * @param fontes     documentos usados, sem repetição; vazio quando nada relevante foi encontrado
+ * <p>Devolve a troca inteira: a sessão já com o {@code atualizadoEm} novo (e
+ * com o título, quando ele nasceu desta pergunta), a mensagem do usuário e a
+ * do assistente. Assim a tela não precisa recarregar nada depois de
+ * perguntar.</p>
  */
-public record RespostaAssistenteResponse(UUID mensagemId, String resposta, List<FonteResponse> fontes,
-                                         OffsetDateTime criadoEm) {
+public record RespostaAssistenteResponse(SessaoResponse sessao, MensagemResponse pergunta,
+                                         MensagemResponse resposta) {
 }

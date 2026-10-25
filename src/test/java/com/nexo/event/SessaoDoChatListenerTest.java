@@ -38,7 +38,7 @@ class SessaoDoChatListenerTest {
         listener = new SessaoDoChatListener(sessaoRepository);
         tenantId = UUID.randomUUID();
         usuarioId = UUID.randomUUID();
-        sessao = ChatSessao.nova(tenantId, usuarioId, ContextoChat.CONHECIMENTO, INICIO);
+        sessao = ChatSessao.nova(tenantId, usuarioId, ContextoChat.CONHECIMENTO, null, INICIO);
         ReflectionTestUtils.setField(sessao, "id", UUID.randomUUID());
     }
 

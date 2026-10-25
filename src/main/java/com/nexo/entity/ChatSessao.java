@@ -51,14 +51,24 @@ public class ChatSessao {
     protected ChatSessao() {
     }
 
-    /** Factory Method: sessão nova, ainda sem título (ele nasce da primeira pergunta). */
-    public static ChatSessao nova(UUID tenantId, UUID usuarioId, ContextoChat contexto, OffsetDateTime agora) {
+    /**
+     * Factory Method: sessão nova.
+     *
+     * <p>O título é opcional: quem cria pode já mandar um (é o que a tela do
+     * histórico faz, com o começo da primeira pergunta). Sem ele, a sessão
+     * nasce sem título e ganha um na primeira troca de mensagens.</p>
+     */
+    public static ChatSessao nova(UUID tenantId, UUID usuarioId, ContextoChat contexto, String titulo,
+                                  OffsetDateTime agora) {
         ChatSessao sessao = new ChatSessao();
         sessao.tenantId = tenantId;
         sessao.usuarioId = usuarioId;
         sessao.contexto = contexto == null ? ContextoChat.CONHECIMENTO : contexto;
         sessao.iniciadoEm = agora;
         sessao.ultimaInteracao = agora;
+        if (titulo != null && !titulo.isBlank()) {
+            sessao.renomear(titulo);
+        }
         return sessao;
     }
 

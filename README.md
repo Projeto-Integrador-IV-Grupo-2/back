@@ -421,12 +421,30 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 
 | Endpoint | Acesso | O que faz |
 |---|---|---|
-| `POST /api/assistente/sessoes` | autenticado | Cria uma sessão de conversa. Corpo opcional `{"contexto": "CONHECIMENTO"}`, que já é o padrão |
-| `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga (`ultima_interacao`). A ordem é fixa: `sort` na query é ignorado |
-| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"pergunta": "..."}` com até 2000 caracteres. Devolve `resposta`, `fontes` (`conteudoId` e `titulo` de cada documento usado), `mensagemId` e `criadoEm` |
-| `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `papel`, `conteudo`, `fontes` e `criadoEm` |
-| `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 200 caracteres (o tamanho do DER) — troca o título que nasceu da primeira pergunta |
+| `POST /api/assistente/sessoes` | autenticado | Cria uma conversa. Corpo opcional `{"titulo": "...", "contexto": "CONHECIMENTO"}` — a tela manda o começo da primeira pergunta como título; sem ele, o título nasce da primeira troca |
+| `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga. A ordem é fixa: `sort` na query é ignorado |
+| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"conteudo": "..."}` com até 2000 caracteres (`pergunta` segue aceito como apelido). Devolve a troca inteira: `sessao`, `pergunta` e `resposta` |
+| `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `id`, `papel`, `conteudo`, `fontes` e `criadoEm` |
+| `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 200 caracteres — renomeia a conversa |
 | `DELETE /api/assistente/sessoes/{id}` | autenticado | **204**. Apaga a conversa e, junto, todas as mensagens dela |
+
+Formato de uma conversa e de uma mensagem:
+
+```json
+{ "id": "…", "contexto": "CONHECIMENTO", "titulo": "Quantos dias de férias?",
+  "criadoEm": "2026-10-25T12:00:00Z", "atualizadoEm": "2026-10-25T12:03:00Z" }
+
+{ "id": "…", "papel": "ASSISTENTE", "conteudo": "…",
+  "fontes": ["Política de férias"], "criadoEm": "2026-10-25T12:03:00Z" }
+```
+
+> **Os nomes do JSON não são os das colunas.** `criadoEm` e `atualizadoEm`
+> saem de `iniciado_em` e `ultima_interacao`, e `fontes` é uma lista de
+> títulos em vez de objetos. Foi uma decisão do grupo: a tela do histórico
+> (front #55) já estava escrita contra esse contrato, e adaptar a API saiu
+> mais barato do que refazer a tela. O banco continua igual ao DER; só a
+> borda muda. `titulo` nunca volta nulo — enquanto a conversa não tem nome
+> próprio, vale `"Nova conversa"`.
 
 **Cada um só enxerga as próprias conversas — inclusive o admin.** Sessão de
 outra pessoa ou de outro tenant responde **404** em todas as rotas acima, como

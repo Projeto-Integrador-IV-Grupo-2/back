@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexo.dto.LoginRequest;
 import com.nexo.dto.LoginResponse;
+import com.nexo.dto.assistente.SessaoResponse;
 import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
 import com.nexo.entity.PapelMensagem;
@@ -112,7 +113,7 @@ class AssistenteControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(header().string(HttpHeaders.LOCATION, startsWith("http://localhost/api/assistente/sessoes/")))
                 .andExpect(jsonPath("$.contexto").value("CONHECIMENTO"))
-                .andExpect(jsonPath("$.titulo").doesNotExist());
+                .andExpect(jsonPath("$.titulo").value(SessaoResponse.TITULO_PADRAO));
     }
 
     @Test
@@ -123,11 +124,15 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensagemId").isNotEmpty())
-                .andExpect(jsonPath("$.resposta", startsWith(ClienteIaFake.PREFIXO_RESPOSTA)))
-                .andExpect(jsonPath("$.fontes", hasSize(1)))
-                .andExpect(jsonPath("$.fontes[0].conteudoId").value(ferias.toString()))
-                .andExpect(jsonPath("$.fontes[0].titulo").value("Política de férias"));
+                // A troca inteira volta: sessão já atualizada, pergunta e resposta.
+                .andExpect(jsonPath("$.sessao.titulo").value("Quantos dias de férias o colaborador tem?"))
+                .andExpect(jsonPath("$.pergunta.papel").value("USUARIO"))
+                .andExpect(jsonPath("$.pergunta.conteudo").value("Quantos dias de férias o colaborador tem?"))
+                .andExpect(jsonPath("$.resposta.id").isNotEmpty())
+                .andExpect(jsonPath("$.resposta.papel").value("ASSISTENTE"))
+                .andExpect(jsonPath("$.resposta.conteudo", startsWith(ClienteIaFake.PREFIXO_RESPOSTA)))
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(1)))
+                .andExpect(jsonPath("$.resposta.fontes[0]").value("Política de férias"));
 
         List<ChatMensagem> mensagens = chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId);
         assertThat(mensagens).extracting(ChatMensagem::getPapel)
@@ -145,8 +150,8 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "Qual a senha do wifi da recepção?", tokenColaborador))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.resposta").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
-                .andExpect(jsonPath("$.fontes", hasSize(0)));
+                .andExpect(jsonPath("$.resposta.conteudo").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)));
     }
 
     @Test
@@ -158,8 +163,8 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.resposta").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
-                .andExpect(jsonPath("$.fontes", hasSize(0)));
+                .andExpect(jsonPath("$.resposta.conteudo").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)));
     }
 
     @Test
@@ -207,10 +212,43 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "   ", tokenColaborador))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("pergunta"));
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("conteudo"));
         mockMvc.perform(pergunta(sessaoId, "a".repeat(2001), tokenColaborador))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("pergunta"));
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("conteudo"));
+    }
+
+    @Test
+    void aceitaOApelidoPerguntaNoCorpoDaMensagem() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+
+        // `conteudo` é o nome do contrato; `pergunta` continua aceito para
+        // não quebrar quem integrou com o nome antigo.
+        mockMvc.perform(comToken(post("/api/assistente/sessoes/{id}/mensagens", sessaoId), tokenColaborador)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("pergunta", "Quantos dias de férias o colaborador tem?"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resposta.conteudo", startsWith(ClienteIaFake.PREFIXO_RESPOSTA)));
+    }
+
+    @Test
+    void aSessaoPodeNascerComOTituloEscolhidoPorQuemAbre() throws Exception {
+        String resposta = mockMvc.perform(comToken(post("/api/assistente/sessoes"), tokenColaborador)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("titulo", "Dúvidas de férias"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.titulo").value("Dúvidas de férias"))
+                .andExpect(jsonPath("$.criadoEm").isNotEmpty())
+                .andExpect(jsonPath("$.atualizadoEm").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        UUID sessaoId = UUID.fromString(objectMapper.readTree(resposta).get("id").asText());
+
+        // O título escolhido não é sobrescrito pela primeira pergunta.
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessao.titulo").value("Dúvidas de férias"));
     }
 
     @Test
@@ -252,7 +290,7 @@ class AssistenteControllerTest {
                 .andExpect(jsonPath("$[0].conteudo").value("Quantos dias de férias o colaborador tem?"))
                 .andExpect(jsonPath("$[0].fontes", hasSize(0)))
                 .andExpect(jsonPath("$[1].papel").value("ASSISTENTE"))
-                .andExpect(jsonPath("$[1].fontes[0].conteudoId").value(ferias.toString()));
+                .andExpect(jsonPath("$[1].fontes[0]").value("Política de férias"));
     }
 
     @Test
@@ -365,7 +403,7 @@ class AssistenteControllerTest {
     private MockHttpServletRequestBuilder pergunta(UUID sessaoId, String texto, String token) throws Exception {
         return comToken(post("/api/assistente/sessoes/{id}/mensagens", sessaoId), token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(json(Map.of("pergunta", texto)));
+                .content(json(Map.of("conteudo", texto)));
     }
 
     private Tenant criaTenant() {

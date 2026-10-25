@@ -117,8 +117,8 @@ class ChatSessaoServiceTest {
         assertThat(mensagens).extracting(MensagemResponse::papel)
                 .containsExactly(PapelMensagem.USUARIO, PapelMensagem.ASSISTENTE);
         assertThat(mensagens.get(0).fontes()).isEmpty();
-        // Dois trechos do mesmo documento viram uma fonte só.
-        assertThat(mensagens.get(1).fontes()).extracting(fonte -> fonte.conteudoId()).containsExactly(conteudoId);
+        // Dois trechos do mesmo documento viram uma fonte só, pelo título.
+        assertThat(mensagens.get(1).fontes()).containsExactly("Política de férias");
     }
 
     @Test
@@ -180,7 +180,7 @@ class ChatSessaoServiceTest {
             return salva;
         });
 
-        ChatMensagem resposta = service.registrarTroca(sessao, "Quantos dias de férias?", instante(0),
+        TrocaRegistrada troca = service.registrarTroca(sessao, "Quantos dias de férias?", instante(0),
                 "Trinta dias.", List.of());
 
         ArgumentCaptor<ChatMensagem> gravadas = ArgumentCaptor.forClass(ChatMensagem.class);
@@ -193,20 +193,31 @@ class ChatSessaoServiceTest {
         ArgumentCaptor<MensagemRegistradaEvent> evento = ArgumentCaptor.forClass(MensagemRegistradaEvent.class);
         verify(publisher).publishEvent(evento.capture());
         assertThat(evento.getValue().sessaoId()).isEqualTo(sessao.getId());
-        assertThat(evento.getValue().mensagemId()).isEqualTo(resposta.getId());
+        assertThat(evento.getValue().mensagemId()).isEqualTo(troca.resposta().getId());
         assertThat(evento.getValue().primeiraPergunta()).isEqualTo("Quantos dias de férias?");
         // A sessão só é tocada pelo listener — o service de gravação não mexe nela.
         verify(sessaoRepository, never()).save(any());
     }
 
     @Test
-    void criarSessaoSemContextoNasceEmConhecimentoESemTitulo() {
+    void criarSessaoSemContextoNasceEmConhecimentoEComTituloPadrao() {
         when(sessaoRepository.save(any(ChatSessao.class))).thenAnswer(chamada -> chamada.getArgument(0));
 
-        SessaoResponse resposta = service.criar(null, usuario);
+        SessaoResponse resposta = service.criar(null, null, usuario);
 
         assertThat(resposta.contexto()).isEqualTo(ContextoChat.CONHECIMENTO);
-        assertThat(resposta.titulo()).isNull();
+        // A conversa ainda não tem nome próprio, mas a resposta nunca manda
+        // título nulo: a tela espera sempre um texto.
+        assertThat(resposta.titulo()).isEqualTo(SessaoResponse.TITULO_PADRAO);
+    }
+
+    @Test
+    void criarSessaoComTituloJaNasceComEle() {
+        when(sessaoRepository.save(any(ChatSessao.class))).thenAnswer(chamada -> chamada.getArgument(0));
+
+        SessaoResponse resposta = service.criar("  Dúvidas   de   RH  ", null, usuario);
+
+        assertThat(resposta.titulo()).isEqualTo("Dúvidas de RH");
     }
 
     @Test
@@ -236,7 +247,7 @@ class ChatSessaoServiceTest {
     }
 
     private static ChatSessao sessaoCom(UUID tenantId, UUID usuarioId) {
-        ChatSessao nova = ChatSessao.nova(tenantId, usuarioId, ContextoChat.CONHECIMENTO,
+        ChatSessao nova = ChatSessao.nova(tenantId, usuarioId, ContextoChat.CONHECIMENTO, null,
                 OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC));
         ReflectionTestUtils.setField(nova, "id", UUID.randomUUID());
         return nova;

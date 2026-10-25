@@ -50,10 +50,12 @@ public class AssistenteController {
     }
 
     @PostMapping
-    public ResponseEntity<SessaoResponse> criarSessao(@RequestBody(required = false) CriarSessaoRequest request,
+    public ResponseEntity<SessaoResponse> criarSessao(@Valid @RequestBody(required = false) CriarSessaoRequest request,
                                                       @AuthenticationPrincipal UsuarioAutenticado usuario,
                                                       UriComponentsBuilder uriBuilder) {
-        SessaoResponse response = chatSessaoService.criar(request == null ? null : request.contexto(), usuario);
+        SessaoResponse response = chatSessaoService.criar(
+                request == null ? null : request.titulo(),
+                request == null ? null : request.contexto(), usuario);
         URI location = uriBuilder.path("/api/assistente/sessoes/{id}").buildAndExpand(response.id()).toUri();
         return ResponseEntity.created(location).body(response);
     }
@@ -91,6 +93,6 @@ public class AssistenteController {
     public RespostaAssistenteResponse perguntar(@PathVariable UUID id,
                                                 @Valid @RequestBody PerguntaRequest request,
                                                 @AuthenticationPrincipal UsuarioAutenticado usuario) {
-        return consultaAssistenteService.perguntar(id, request.pergunta(), usuario);
+        return consultaAssistenteService.perguntar(id, request.conteudo(), usuario);
     }
 }

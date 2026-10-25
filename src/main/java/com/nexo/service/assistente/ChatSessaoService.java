@@ -56,9 +56,10 @@ public class ChatSessaoService {
         this.clock = clock;
     }
 
+    /** @param titulo opcional — quem abre a conversa pode já dar nome a ela */
     @Transactional
-    public SessaoResponse criar(ContextoChat contexto, UsuarioAutenticado usuario) {
-        ChatSessao sessao = ChatSessao.nova(usuario.getTenantId(), usuario.getId(), contexto,
+    public SessaoResponse criar(String titulo, ContextoChat contexto, UsuarioAutenticado usuario) {
+        ChatSessao sessao = ChatSessao.nova(usuario.getTenantId(), usuario.getId(), contexto, titulo,
                 OffsetDateTime.now(clock));
         return SessaoResponse.de(sessaoRepository.save(sessao));
     }
@@ -126,21 +127,26 @@ public class ChatSessaoService {
      * {@link MensagemRegistradaEvent}, que atualiza a sessão.
      *
      * @param sessao sessão já conferida como sendo do usuário autenticado
-     * @return a mensagem do assistente
+     * @return a troca inteira, com a sessão já atualizada pelo listener
      */
     @Transactional
-    public ChatMensagem registrarTroca(ChatSessao sessao, String pergunta, OffsetDateTime momentoPergunta,
-                                       String resposta, List<FonteMensagem> fontes) {
+    public TrocaRegistrada registrarTroca(ChatSessao sessao, String pergunta, OffsetDateTime momentoPergunta,
+                                          String resposta, List<FonteMensagem> fontes) {
         UUID sessaoId = sessao.getId();
         OffsetDateTime agora = OffsetDateTime.now(clock);
         // A resposta precisa vir depois da pergunta mesmo com relógio de baixa resolução.
         OffsetDateTime momentoResposta = agora.isAfter(momentoPergunta) ? agora : momentoPergunta.plusNanos(1_000);
-        mensagemRepository.save(ChatMensagem.doUsuario(sessao.getTenantId(), sessaoId, pergunta, momentoPergunta));
-        ChatMensagem mensagem = mensagemRepository.save(
+        ChatMensagem daPergunta = mensagemRepository.save(
+                ChatMensagem.doUsuario(sessao.getTenantId(), sessaoId, pergunta, momentoPergunta));
+        ChatMensagem daResposta = mensagemRepository.save(
                 ChatMensagem.doAssistente(sessao.getTenantId(), sessaoId, resposta, fontes, momentoResposta));
         publisher.publishEvent(new MensagemRegistradaEvent(sessao.getTenantId(), sessao.getUsuarioId(), sessaoId,
-                mensagem.getId(), pergunta, momentoResposta));
-        return mensagem;
+                daResposta.getId(), pergunta, momentoResposta));
+        // Relê dentro da mesma transação: é esta instância que o listener
+        // acabou de atualizar, então a resposta já sai com o título e o
+        // atualizadoEm novos.
+        ChatSessao atualizada = sessaoRepository.findById(sessaoId).orElse(sessao);
+        return new TrocaRegistrada(atualizada, daPergunta, daResposta);
     }
 
     /**
