@@ -24,6 +24,9 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -152,6 +155,29 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    /**
+     * Arquivo acima do limite do multipart ({@code spring.servlet.multipart.*}):
+     * o Spring recusa antes de chegar ao controller. Sem isto viraria 500.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiError> handleUploadGrandeDemais(MaxUploadSizeExceededException ex,
+                                                             HttpServletRequest request) {
+        return erroNoCampo("arquivo", "O arquivo passa do tamanho máximo permitido", request);
+    }
+
+    /** Upload sem o campo {@code arquivo}. */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiError> handleParteAusente(MissingServletRequestPartException ex,
+                                                       HttpServletRequest request) {
+        return erroNoCampo(ex.getRequestPartName(), "Envie o arquivo no campo " + ex.getRequestPartName(), request);
+    }
+
+    /** Corpo multipart malformado. */
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ApiError> handleMultipart(MultipartException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Envio de arquivo inválido", request);
+    }
+
     @ExceptionHandler(ServicoExternoIndisponivelException.class)
     public ResponseEntity<ApiError> handleServicoExterno(ServicoExternoIndisponivelException ex,
                                                          HttpServletRequest request) {
@@ -210,6 +236,17 @@ public class GlobalExceptionHandler {
 
     private ApiError.FieldValidationError toFieldError(FieldError fieldError) {
         return new ApiError.FieldValidationError(fieldError.getField(), fieldError.getDefaultMessage());
+    }
+
+    private ResponseEntity<ApiError> erroNoCampo(String campo, String mensagem, HttpServletRequest request) {
+        ApiError body = new ApiError(
+                Instant.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                mensagem,
+                request.getRequestURI(),
+                List.of(new ApiError.FieldValidationError(campo, mensagem)));
+        return ResponseEntity.badRequest().body(body);
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest request) {
