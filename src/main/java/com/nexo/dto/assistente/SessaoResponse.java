@@ -6,11 +6,11 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /** Sessão de conversa com o assistente. {@code titulo} é nulo até a primeira pergunta. */
-public record SessaoResponse(UUID id, ContextoChat contexto, String titulo, OffsetDateTime iniciadaEm,
+public record SessaoResponse(UUID id, ContextoChat contexto, String titulo, OffsetDateTime iniciadoEm,
                              OffsetDateTime ultimaInteracao) {
 
     public static SessaoResponse de(ChatSessao sessao) {
         return new SessaoResponse(sessao.getId(), sessao.getContexto(), sessao.getTitulo(),
-                sessao.getIniciadaEm(), sessao.getUltimaInteracao());
+                sessao.getIniciadoEm(), sessao.getUltimaInteracao());
     }
 }

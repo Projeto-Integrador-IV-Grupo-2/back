@@ -21,8 +21,8 @@ public class ChatSessao {
     /** Caracteres da pergunta que viram o título automático da conversa. */
     public static final int TAMANHO_TITULO = 60;
 
-    /** Limite da coluna {@code titulo} — o que o usuário pode escrever ao renomear. */
-    public static final int TAMANHO_MAXIMO_TITULO = 120;
+    /** Limite da coluna {@code titulo} no DER — o que o usuário pode escrever ao renomear. */
+    public static final int TAMANHO_MAXIMO_TITULO = 200;
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -39,11 +39,11 @@ public class ChatSessao {
     @Column(name = "contexto", nullable = false, columnDefinition = "contexto_chat")
     private ContextoChat contexto;
 
-    @Column(name = "titulo", length = 120)
+    @Column(name = "titulo", length = TAMANHO_MAXIMO_TITULO)
     private String titulo;
 
-    @Column(name = "iniciada_em", nullable = false, updatable = false)
-    private OffsetDateTime iniciadaEm;
+    @Column(name = "iniciado_em", nullable = false, updatable = false)
+    private OffsetDateTime iniciadoEm;
 
     @Column(name = "ultima_interacao", nullable = false)
     private OffsetDateTime ultimaInteracao;
@@ -57,7 +57,7 @@ public class ChatSessao {
         sessao.tenantId = tenantId;
         sessao.usuarioId = usuarioId;
         sessao.contexto = contexto == null ? ContextoChat.CONHECIMENTO : contexto;
-        sessao.iniciadaEm = agora;
+        sessao.iniciadoEm = agora;
         sessao.ultimaInteracao = agora;
         return sessao;
     }
@@ -100,8 +100,8 @@ public class ChatSessao {
         return titulo;
     }
 
-    public OffsetDateTime getIniciadaEm() {
-        return iniciadaEm;
+    public OffsetDateTime getIniciadoEm() {
+        return iniciadoEm;
     }
 
     public OffsetDateTime getUltimaInteracao() {

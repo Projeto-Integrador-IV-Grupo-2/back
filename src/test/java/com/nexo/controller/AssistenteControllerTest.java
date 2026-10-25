@@ -192,7 +192,8 @@ class AssistenteControllerTest {
         UUID sessaoId = criaSessao(tokenColaborador);
         OffsetDateTime agora = OffsetDateTime.now();
         for (int i = 0; i < 10; i++) {
-            chatMensagemRepository.save(ChatMensagem.doUsuario(sessaoId, "pergunta " + i, agora.minusSeconds(i)));
+            chatMensagemRepository.save(ChatMensagem.doUsuario(
+                    tenant.getId(), sessaoId, "pergunta " + i, agora.minusSeconds(i)));
         }
 
         mockMvc.perform(pergunta(sessaoId, "Mais uma?", tokenColaborador))
@@ -286,7 +287,7 @@ class AssistenteControllerTest {
         mockMvc.perform(renomear(sessaoId, "   ", tokenColaborador))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors[0].field").value("titulo"));
-        mockMvc.perform(renomear(sessaoId, "a".repeat(121), tokenColaborador))
+        mockMvc.perform(renomear(sessaoId, "a".repeat(201), tokenColaborador))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors[0].field").value("titulo"));
     }

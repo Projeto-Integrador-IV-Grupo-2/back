@@ -169,7 +169,7 @@ class ConsultaAssistenteServiceTest {
     }
 
     private void dadoQueRegistraATroca(String resposta) {
-        ChatMensagem gravada = ChatMensagem.doAssistente(sessao.getId(), resposta, List.of(),
+        ChatMensagem gravada = ChatMensagem.doAssistente(usuario.getTenantId(), sessao.getId(), resposta, List.of(),
                 OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC));
         ReflectionTestUtils.setField(gravada, "id", UUID.randomUUID());
         when(chatSessaoService.registrarTroca(eq(sessao), anyString(), any(), eq(resposta), anyList()))

@@ -11,6 +11,6 @@ import jakarta.validation.constraints.Size;
 public record RenomearSessaoRequest(
         @NotBlank(message = "Informe o novo título da conversa")
         @Size(max = ChatSessao.TAMANHO_MAXIMO_TITULO,
-                message = "O título pode ter no máximo 120 caracteres")
+                message = "O título pode ter no máximo 200 caracteres")
         String titulo) {
 }

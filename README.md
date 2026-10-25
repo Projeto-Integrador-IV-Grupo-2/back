@@ -425,12 +425,21 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 | `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga (`ultima_interacao`). A ordem é fixa: `sort` na query é ignorado |
 | `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"pergunta": "..."}` com até 2000 caracteres. Devolve `resposta`, `fontes` (`conteudoId` e `titulo` de cada documento usado), `mensagemId` e `criadoEm` |
 | `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `papel`, `conteudo`, `fontes` e `criadoEm` |
-| `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 120 caracteres — troca o título que nasceu da primeira pergunta |
+| `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 200 caracteres (o tamanho do DER) — troca o título que nasceu da primeira pergunta |
 | `DELETE /api/assistente/sessoes/{id}` | autenticado | **204**. Apaga a conversa e, junto, todas as mensagens dela |
 
 **Cada um só enxerga as próprias conversas — inclusive o admin.** Sessão de
 outra pessoa ou de outro tenant responde **404** em todas as rotas acima, como
 se não existisse.
+
+A **V22** alinhou o chat ao DER em três pontos que a V20 tinha deixado de
+fora: `chat_sessao.titulo` passou de 120 para **200** caracteres,
+`iniciada_em` virou **`iniciado_em`** (e o JSON da resposta acompanha, como
+`iniciadoEm`) e `chat_mensagem` ganhou **`tenant_id`**, com a mesma chave
+composta por tenant que a V14 criou para as outras tabelas — antes ela era a
+única tabela do schema sem a coluna, e o isolamento dependia só de passar por
+`chat_sessao`. A mesma migration criou o `historico_interacao.sessao_id` que a
+V18 havia registrado como "adiado até existir a tabela de sessões".
 
 O fluxo de uma pergunta é este:
 
@@ -454,9 +463,17 @@ O fluxo de uma pergunta é este:
 7. A gravação publica `MensagemRegistradaEvent`. O `SessaoDoChatListener`
    escuta e é quem atualiza `ultima_interacao` e dá título à conversa a partir
    do começo da primeira pergunta — o service que grava a mensagem não mexe na
-   sessão. É o mesmo gancho para alimentar o `historico_interacao`.
-8. A API publica também `PerguntaRespondidaEvent`, ponto de extensão para o
-   `historico_interacao` da issue #48.
+   sessão.
+8. A API publica também `PerguntaRespondidaEvent`, e o
+   `HistoricoInteracaoListener` grava a consulta no `historico_interacao` como
+   `ASSISTENTE_CONSULTADO`, com `sessao_id` preenchido. Os detalhes guardam só
+   `mensagemId`, `encontrouFontes` e `quantidadeFontes` — **nunca** a pergunta
+   nem a resposta.
+
+   Esse listener é `@EventListener` simples, e não `@TransactionalEventListener`:
+   o evento é publicado **fora de transação** (a chamada ao modelo não pode
+   segurar conexão do banco), então um listener ligado ao commit nunca
+   dispararia e a gravação sumiria em silêncio.
 
 Perguntas e respostas **não vão para o log** da aplicação. Resposta em
 streaming (SSE) não foi implementada, porque a issue a marca como opcional.

@@ -135,9 +135,9 @@ public class ChatSessaoService {
         OffsetDateTime agora = OffsetDateTime.now(clock);
         // A resposta precisa vir depois da pergunta mesmo com relógio de baixa resolução.
         OffsetDateTime momentoResposta = agora.isAfter(momentoPergunta) ? agora : momentoPergunta.plusNanos(1_000);
-        mensagemRepository.save(ChatMensagem.doUsuario(sessaoId, pergunta, momentoPergunta));
+        mensagemRepository.save(ChatMensagem.doUsuario(sessao.getTenantId(), sessaoId, pergunta, momentoPergunta));
         ChatMensagem mensagem = mensagemRepository.save(
-                ChatMensagem.doAssistente(sessaoId, resposta, fontes, momentoResposta));
+                ChatMensagem.doAssistente(sessao.getTenantId(), sessaoId, resposta, fontes, momentoResposta));
         publisher.publishEvent(new MensagemRegistradaEvent(sessao.getTenantId(), sessao.getUsuarioId(), sessaoId,
                 mensagem.getId(), pergunta, momentoResposta));
         return mensagem;

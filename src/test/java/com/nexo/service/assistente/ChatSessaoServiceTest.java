@@ -102,8 +102,9 @@ class ChatSessaoServiceTest {
     @Test
     void devolveAsMensagensNaOrdemEmQueForamTrocadas() {
         UUID conteudoId = UUID.randomUUID();
-        ChatMensagem pergunta = ChatMensagem.doUsuario(sessao.getId(), "Quantos dias de férias?", instante(0));
-        ChatMensagem resposta = ChatMensagem.doAssistente(sessao.getId(), "Trinta dias.",
+        ChatMensagem pergunta = ChatMensagem.doUsuario(usuario.getTenantId(), sessao.getId(),
+                "Quantos dias de férias?", instante(0));
+        ChatMensagem resposta = ChatMensagem.doAssistente(usuario.getTenantId(), sessao.getId(), "Trinta dias.",
                 List.of(new FonteMensagem(conteudoId, "Política de férias", UUID.randomUUID(), 1),
                         new FonteMensagem(conteudoId, "Política de férias", UUID.randomUUID(), 2)),
                 instante(1));
@@ -218,8 +219,8 @@ class ChatSessaoServiceTest {
 
     @Test
     void ultimasMensagensVoltamEmOrdemCronologica() {
-        ChatMensagem nova = ChatMensagem.doUsuario(sessao.getId(), "nova", instante(2));
-        ChatMensagem antiga = ChatMensagem.doUsuario(sessao.getId(), "antiga", instante(1));
+        ChatMensagem nova = ChatMensagem.doUsuario(usuario.getTenantId(), sessao.getId(), "nova", instante(2));
+        ChatMensagem antiga = ChatMensagem.doUsuario(usuario.getTenantId(), sessao.getId(), "antiga", instante(1));
         when(mensagemRepository.findBySessaoIdOrderByCriadoEmDesc(eq(sessao.getId()), any(Pageable.class)))
                 .thenReturn(List.of(nova, antiga));
 
