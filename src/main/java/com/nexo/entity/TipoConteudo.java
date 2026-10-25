@@ -4,5 +4,7 @@ package com.nexo.entity;
 public enum TipoConteudo {
     VIDEO,
     TEXTO,
-    LINK
+    LINK,
+    /** Documento da tela de Conhecimento: o material vem dos arquivos anexados. */
+    DOCUMENTO
 }

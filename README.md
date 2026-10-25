@@ -342,6 +342,22 @@ gravado em `trilha_atribuicao.percentual`. Quem recalcula é o
 
 `AreaResponse.totalConteudos` conta os conteúdos com `conteudo.area_id` da área.
 
+### Documentos da tela de Conhecimento
+
+O documento é um `conteudo` do tipo **`DOCUMENTO`**: reaproveita `categoria` e
+`conteudo` (V10/V11) e não exige vídeo, corpo nem link, porque o material dele
+são os arquivos anexados (tabela `arquivo`, V21).
+
+- `Conteudo.novoDocumento(titulo, responsavel)` cria o documento já em
+  `RASCUNHO`, no tenant do responsável.
+- `arquivo` guarda nome original, tipo (`PDF`, `DOCX`, `TXT`, `MD`), tipo MIME,
+  tamanho e a **chave gerada no armazenamento**. O binário fica fora do banco, e o
+  nome enviado nunca vira caminho no disco. Criado só por `Arquivo.novo(...)`.
+- Chaves estrangeiras compostas com o tenant (como na V14): o arquivo nunca
+  aponta para conteúdo ou usuário de outra empresa. Apagar o conteúdo apaga os
+  registros dos arquivos dele.
+- A tabela `arquivo_arquivo` do DER está errada e **não** é criada.
+
 ---
 
 ## Assistente de IA
@@ -714,6 +730,7 @@ do PR. O workflow **não usa segredos**.
 | V18 | `V18__add_conteudo_to_historico.sql` | Referência opcional de conteúdo no histórico, com integridade por tenant |
 | V19 | `V19__create_conteudo_chunk_e_indexacao.sql` | Extensão `vector`, tabela `conteudo_chunk` (embedding `vector(768)` + índice HNSW), enum `status_indexacao` e tabela `indexacao_conteudo` |
 | V20 | `V20__create_chat_sessao_e_mensagem.sql` | Enums `contexto_chat`/`papel_mensagem` e tabelas `chat_sessao` e `chat_mensagem` (com `fontes` em JSONB; apagar a sessão apaga as mensagens) |
+| V21 | `V21__create_arquivo_e_tipo_documento.sql` | Tipo `DOCUMENTO` em `tipo_conteudo`, enum `tipo_arquivo`, tabela `arquivo` e índices tenant + categoria e tenant + área em `conteudo` |
 
 **Atenção ao atualizar um banco que já contém dados:** as migrations V14 e V15
 validam as relações entre tenants e as duplicidades de e-mail/subdomínio sem
