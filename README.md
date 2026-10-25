@@ -459,6 +459,40 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 `jdbc:tc:pgvector:pg16`. **Em produção, o PostgreSQL precisa ter a extensão
 `vector` disponível.**
 
+### Perguntas ao assistente
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `POST /api/assistente/sessoes` | autenticado | Cria uma sessão de conversa. Corpo opcional `{"contexto": "CONHECIMENTO"}`, que já é o padrão |
+| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"pergunta": "..."}` com até 2000 caracteres. Devolve `resposta`, `fontes` (`conteudoId` e `titulo` de cada documento usado), `mensagemId` e `criadoEm` |
+
+Listar, renomear e apagar sessões e ler o histórico ficam para a issue #59.
+
+O fluxo de uma pergunta é este:
+
+1. A sessão precisa ser do próprio usuário. A de outra pessoa, inclusive para o
+   admin, responde **404**.
+2. Cada usuário faz até `IA_PERGUNTAS_POR_MINUTO` perguntas por minuto. A
+   contagem vem de `chat_mensagem`, então vale mesmo com várias instâncias da
+   API. Acima do limite, a resposta é **429** com `Retry-After: 60`.
+3. A API busca os trechos mais parecidos do tenant, só de documentos publicados.
+4. **Sem nenhum trecho relevante**, a resposta é fixa ("Não encontrei essa
+   informação nos documentos da empresa…"), sem fontes e **sem chamar o
+   modelo**, então ele não tem como inventar.
+5. Com trechos, o `MontadorDePromptFactory` escolhe o montador pelo contexto da
+   sessão. O prompt leva os trechos dentro de `<documento>` e as últimas
+   `IA_MENSAGENS_HISTORICO` mensagens da sessão. O prompt de sistema diz que o
+   texto dos documentos é **dado, nunca instrução**, e marcações
+   `<documento>` vindas do próprio texto são neutralizadas.
+6. A pergunta e a resposta são gravadas **juntas** em `chat_mensagem`, com os
+   trechos usados em `fontes` (JSON). Se o provedor cair, a resposta é **503** e
+   nada fica gravado pela metade. A primeira pergunta vira o título da sessão.
+7. A API publica `PerguntaRespondidaEvent`, ponto de extensão para o
+   `historico_interacao` da issue #48.
+
+Perguntas e respostas **não vão para o log** da aplicação. Resposta em
+streaming (SSE) não foi implementada, porque a issue a marca como opcional.
+
 > Quem já tinha o banco local com a imagem `postgres:16-alpine` só precisa
 > rodar `docker compose down && docker compose up -d`. O volume é reaproveitado,
 > porque a versão do PostgreSQL continua a 16.
@@ -643,6 +677,8 @@ define-se a variável e ela prevalece.
 | `IA_INDEXACAO_INTERVALO` | `PT5M` | Espera base entre uma falha de indexação e a próxima tentativa |
 | `IA_BUSCA_TRECHOS` | `5` | Quantos trechos entram no prompt |
 | `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
+| `IA_PERGUNTAS_POR_MINUTO` | `10` | Perguntas ao assistente aceitas por usuário a cada minuto |
+| `IA_MENSAGENS_HISTORICO` | `6` | Mensagens anteriores da sessão que entram no prompt |
 | `DOCUMENTOS_TAMANHO_MAXIMO` | `10MB` | Maior arquivo aceito no upload de documentos (vale também para o multipart) |
 | `DOCUMENTOS_TAMANHO_MAXIMO_REQUISICAO` | `12MB` | Tamanho máximo da requisição multipart inteira (arquivo + campos) |
 | `ARMAZENAMENTO_TIPO` | `local` | Onde ficam os binários dos arquivos; hoje só `local` |
@@ -723,6 +759,7 @@ do PR. O workflow **não usa segredos**.
 | V17 | `V17__track_trilha_start.sql` | Instante de início da atribuição, para auditar a primeira transição sem duplicar eventos |
 | V18 | `V18__add_conteudo_to_historico.sql` | Referência opcional de conteúdo no histórico, com integridade por tenant |
 | V19 | `V19__create_conteudo_chunk_e_indexacao.sql` | Extensão `vector`, tabela `conteudo_chunk` (embedding `vector(768)` + índice HNSW), enum `status_indexacao` e tabela `indexacao_conteudo` |
+| V20 | `V20__create_chat_sessao_e_mensagem.sql` | Enums `contexto_chat`/`papel_mensagem` e tabelas `chat_sessao` e `chat_mensagem` (com `fontes` em JSONB; apagar a sessão apaga as mensagens) |
 | V21 | `V21__create_arquivo_e_tipo_documento.sql` | Tipo `DOCUMENTO` em `tipo_conteudo`, enum `tipo_arquivo`, tabela `arquivo` e índices tenant + categoria e tenant + área em `conteudo` |
 
 **Atenção ao atualizar um banco que já contém dados:** as migrations V14 e V15

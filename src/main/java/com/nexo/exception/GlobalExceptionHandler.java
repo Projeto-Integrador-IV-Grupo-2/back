@@ -7,6 +7,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.mapping.PropertyReferenceException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -189,6 +190,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleIaIndisponivel(IaIndisponivelException ex, HttpServletRequest request) {
         log.warn("Assistente de IA indisponível em {}: {}", request.getRequestURI(), ex.getMessage());
         return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
+    }
+
+    /** Muitas perguntas ao assistente em pouco tempo. */
+    @ExceptionHandler(LimiteDePerguntasExcedidoException.class)
+    public ResponseEntity<ApiError> handleLimiteDePerguntas(LimiteDePerguntasExcedidoException ex,
+                                                            HttpServletRequest request) {
+        ApiError body = ApiError.of(HttpStatus.TOO_MANY_REQUESTS.value(),
+                HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(), ex.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getSegundosParaTentarDeNovo()))
+                .body(body);
     }
 
     /** Ex.: {@code DELETE} numa rota que só aceita {@code GET}. Sem isto viraria 500. */
