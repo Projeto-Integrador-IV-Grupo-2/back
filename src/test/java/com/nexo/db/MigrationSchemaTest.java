@@ -161,13 +161,16 @@ class MigrationSchemaTest {
         List<String> colunas = jdbc.queryForList(
                 "SELECT column_name FROM information_schema.columns "
                         + "WHERE table_name = 'historico_interacao'", String.class);
-        assertThat(colunas).contains("id", "tenant_id", "usuario_id", "conteudo_id", "tipo", "detalhes", "criado_em")
-                .doesNotContain("sessao_id");
+        // sessao_id entrou na V22, quando a tabela de sessões passou a existir
+        // — era o que a V18 tinha deixado registrado como adiado.
+        assertThat(colunas).contains("id", "tenant_id", "usuario_id", "conteudo_id", "sessao_id", "tipo",
+                "detalhes", "criado_em");
 
         List<String> constraints = jdbc.queryForList(
                 "SELECT conname FROM pg_constraint WHERE conrelid = 'historico_interacao'::regclass",
                 String.class);
         assertThat(constraints).contains("fk_historico_usuario_tenant", "fk_historico_conteudo_tenant",
+                "fk_historico_sessao_tenant",
                 "ck_historico_interacao_tipo", "ck_historico_interacao_detalhes_objeto");
     }
 }

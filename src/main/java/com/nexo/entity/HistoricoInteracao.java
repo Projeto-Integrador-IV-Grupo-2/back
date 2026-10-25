@@ -40,6 +40,11 @@ public class HistoricoInteracao {
     @JoinColumn(name = "conteudo_id", updatable = false)
     private Conteudo conteudo;
 
+    /** Sessão do assistente, quando a interação for uma consulta ao chat. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sessao_id", updatable = false)
+    private ChatSessao sessao;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo", nullable = false, length = 40, updatable = false)
     private TipoInteracaoHistorico tipo;
@@ -73,6 +78,14 @@ public class HistoricoInteracao {
 
     public void setUsuario(Usuario usuario) {
         this.usuario = usuario;
+    }
+
+    public ChatSessao getSessao() {
+        return sessao;
+    }
+
+    public void setSessao(ChatSessao sessao) {
+        this.sessao = sessao;
     }
 
     public Conteudo getConteudo() {

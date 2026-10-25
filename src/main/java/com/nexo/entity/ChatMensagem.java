@@ -23,6 +23,9 @@ public class ChatMensagem {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "tenant_id", nullable = false, updatable = false)
+    private UUID tenantId;
+
     @Column(name = "sessao_id", nullable = false, updatable = false)
     private UUID sessaoId;
 
@@ -45,19 +48,20 @@ public class ChatMensagem {
     }
 
     /** Factory Method: pergunta do usuário. */
-    public static ChatMensagem doUsuario(UUID sessaoId, String pergunta, OffsetDateTime quando) {
-        return nova(sessaoId, PapelMensagem.USUARIO, pergunta, List.of(), quando);
+    public static ChatMensagem doUsuario(UUID tenantId, UUID sessaoId, String pergunta, OffsetDateTime quando) {
+        return nova(tenantId, sessaoId, PapelMensagem.USUARIO, pergunta, List.of(), quando);
     }
 
     /** Factory Method: resposta do assistente, com os trechos usados. */
-    public static ChatMensagem doAssistente(UUID sessaoId, String resposta, List<FonteMensagem> fontes,
-                                            OffsetDateTime quando) {
-        return nova(sessaoId, PapelMensagem.ASSISTENTE, resposta, fontes, quando);
+    public static ChatMensagem doAssistente(UUID tenantId, UUID sessaoId, String resposta,
+                                            List<FonteMensagem> fontes, OffsetDateTime quando) {
+        return nova(tenantId, sessaoId, PapelMensagem.ASSISTENTE, resposta, fontes, quando);
     }
 
-    private static ChatMensagem nova(UUID sessaoId, PapelMensagem papel, String conteudo,
+    private static ChatMensagem nova(UUID tenantId, UUID sessaoId, PapelMensagem papel, String conteudo,
                                      List<FonteMensagem> fontes, OffsetDateTime quando) {
         ChatMensagem mensagem = new ChatMensagem();
+        mensagem.tenantId = tenantId;
         mensagem.sessaoId = sessaoId;
         mensagem.papel = papel;
         mensagem.conteudo = conteudo;
@@ -68,6 +72,10 @@ public class ChatMensagem {
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
     }
 
     public UUID getSessaoId() {

@@ -521,10 +521,43 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 
 | Endpoint | Acesso | O que faz |
 |---|---|---|
-| `POST /api/assistente/sessoes` | autenticado | Cria uma sessão de conversa. Corpo opcional `{"contexto": "CONHECIMENTO"}`, que já é o padrão |
-| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"pergunta": "..."}` com até 2000 caracteres. Devolve `resposta`, `fontes` (`conteudoId` e `titulo` de cada documento usado), `mensagemId` e `criadoEm` |
+| `POST /api/assistente/sessoes` | autenticado | Cria uma conversa. Corpo opcional `{"titulo": "...", "contexto": "CONHECIMENTO"}` — a tela manda o começo da primeira pergunta como título; sem ele, o título nasce da primeira troca |
+| `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga. A ordem é fixa: `sort` na query é ignorado |
+| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"conteudo": "..."}` com até 2000 caracteres (`pergunta` segue aceito como apelido). Devolve a troca inteira: `sessao`, `pergunta` e `resposta` |
+| `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `id`, `papel`, `conteudo`, `fontes` e `criadoEm` |
+| `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 200 caracteres — renomeia a conversa |
+| `DELETE /api/assistente/sessoes/{id}` | autenticado | **204**. Apaga a conversa e, junto, todas as mensagens dela |
 
-Listar, renomear e apagar sessões e ler o histórico ficam para a issue #59.
+Formato de uma conversa e de uma mensagem:
+
+```json
+{ "id": "…", "contexto": "CONHECIMENTO", "titulo": "Quantos dias de férias?",
+  "criadoEm": "2026-10-25T12:00:00Z", "atualizadoEm": "2026-10-25T12:03:00Z" }
+
+{ "id": "…", "papel": "ASSISTENTE", "conteudo": "…",
+  "fontes": ["Política de férias"], "criadoEm": "2026-10-25T12:03:00Z" }
+```
+
+> **Os nomes do JSON não são os das colunas.** `criadoEm` e `atualizadoEm`
+> saem de `iniciado_em` e `ultima_interacao`, e `fontes` é uma lista de
+> títulos em vez de objetos. Foi uma decisão do grupo: a tela do histórico
+> (front #55) já estava escrita contra esse contrato, e adaptar a API saiu
+> mais barato do que refazer a tela. O banco continua igual ao DER; só a
+> borda muda. `titulo` nunca volta nulo — enquanto a conversa não tem nome
+> próprio, vale `"Nova conversa"`.
+
+**Cada um só enxerga as próprias conversas — inclusive o admin.** Sessão de
+outra pessoa ou de outro tenant responde **404** em todas as rotas acima, como
+se não existisse.
+
+A **V22** alinhou o chat ao DER em três pontos que a V20 tinha deixado de
+fora: `chat_sessao.titulo` passou de 120 para **200** caracteres,
+`iniciada_em` virou **`iniciado_em`** (e o JSON da resposta acompanha, como
+`iniciadoEm`) e `chat_mensagem` ganhou **`tenant_id`**, com a mesma chave
+composta por tenant que a V14 criou para as outras tabelas — antes ela era a
+única tabela do schema sem a coluna, e o isolamento dependia só de passar por
+`chat_sessao`. A mesma migration criou o `historico_interacao.sessao_id` que a
+V18 havia registrado como "adiado até existir a tabela de sessões".
 
 O fluxo de uma pergunta é este:
 
@@ -544,9 +577,21 @@ O fluxo de uma pergunta é este:
    `<documento>` vindas do próprio texto são neutralizadas.
 6. A pergunta e a resposta são gravadas **juntas** em `chat_mensagem`, com os
    trechos usados em `fontes` (JSON). Se o provedor cair, a resposta é **503** e
-   nada fica gravado pela metade. A primeira pergunta vira o título da sessão.
-7. A API publica `PerguntaRespondidaEvent`, ponto de extensão para o
-   `historico_interacao` da issue #48.
+   nada fica gravado pela metade.
+7. A gravação publica `MensagemRegistradaEvent`. O `SessaoDoChatListener`
+   escuta e é quem atualiza `ultima_interacao` e dá título à conversa a partir
+   do começo da primeira pergunta — o service que grava a mensagem não mexe na
+   sessão.
+8. A API publica também `PerguntaRespondidaEvent`, e o
+   `HistoricoInteracaoListener` grava a consulta no `historico_interacao` como
+   `ASSISTENTE_CONSULTADO`, com `sessao_id` preenchido. Os detalhes guardam só
+   `mensagemId`, `encontrouFontes` e `quantidadeFontes` — **nunca** a pergunta
+   nem a resposta.
+
+   Esse listener é `@EventListener` simples, e não `@TransactionalEventListener`:
+   o evento é publicado **fora de transação** (a chamada ao modelo não pode
+   segurar conexão do banco), então um listener ligado ao commit nunca
+   dispararia e a gravação sumiria em silêncio.
 
 Perguntas e respostas **não vão para o log** da aplicação. Resposta em
 streaming (SSE) não foi implementada, porque a issue a marca como opcional.

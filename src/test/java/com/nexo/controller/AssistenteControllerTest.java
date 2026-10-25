@@ -6,6 +6,8 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -15,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexo.dto.LoginRequest;
 import com.nexo.dto.LoginResponse;
+import com.nexo.dto.assistente.SessaoResponse;
 import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
 import com.nexo.entity.PapelMensagem;
@@ -110,7 +113,7 @@ class AssistenteControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(header().string(HttpHeaders.LOCATION, startsWith("http://localhost/api/assistente/sessoes/")))
                 .andExpect(jsonPath("$.contexto").value("CONHECIMENTO"))
-                .andExpect(jsonPath("$.titulo").doesNotExist());
+                .andExpect(jsonPath("$.titulo").value(SessaoResponse.TITULO_PADRAO));
     }
 
     @Test
@@ -121,11 +124,15 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mensagemId").isNotEmpty())
-                .andExpect(jsonPath("$.resposta", startsWith(ClienteIaFake.PREFIXO_RESPOSTA)))
-                .andExpect(jsonPath("$.fontes", hasSize(1)))
-                .andExpect(jsonPath("$.fontes[0].conteudoId").value(ferias.toString()))
-                .andExpect(jsonPath("$.fontes[0].titulo").value("Política de férias"));
+                // A troca inteira volta: sessão já atualizada, pergunta e resposta.
+                .andExpect(jsonPath("$.sessao.titulo").value("Quantos dias de férias o colaborador tem?"))
+                .andExpect(jsonPath("$.pergunta.papel").value("USUARIO"))
+                .andExpect(jsonPath("$.pergunta.conteudo").value("Quantos dias de férias o colaborador tem?"))
+                .andExpect(jsonPath("$.resposta.id").isNotEmpty())
+                .andExpect(jsonPath("$.resposta.papel").value("ASSISTENTE"))
+                .andExpect(jsonPath("$.resposta.conteudo", startsWith(ClienteIaFake.PREFIXO_RESPOSTA)))
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(1)))
+                .andExpect(jsonPath("$.resposta.fontes[0]").value("Política de férias"));
 
         List<ChatMensagem> mensagens = chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId);
         assertThat(mensagens).extracting(ChatMensagem::getPapel)
@@ -143,8 +150,8 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "Qual a senha do wifi da recepção?", tokenColaborador))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.resposta").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
-                .andExpect(jsonPath("$.fontes", hasSize(0)));
+                .andExpect(jsonPath("$.resposta.conteudo").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)));
     }
 
     @Test
@@ -156,8 +163,8 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.resposta").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
-                .andExpect(jsonPath("$.fontes", hasSize(0)));
+                .andExpect(jsonPath("$.resposta.conteudo").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)));
     }
 
     @Test
@@ -190,7 +197,8 @@ class AssistenteControllerTest {
         UUID sessaoId = criaSessao(tokenColaborador);
         OffsetDateTime agora = OffsetDateTime.now();
         for (int i = 0; i < 10; i++) {
-            chatMensagemRepository.save(ChatMensagem.doUsuario(sessaoId, "pergunta " + i, agora.minusSeconds(i)));
+            chatMensagemRepository.save(ChatMensagem.doUsuario(
+                    tenant.getId(), sessaoId, "pergunta " + i, agora.minusSeconds(i)));
         }
 
         mockMvc.perform(pergunta(sessaoId, "Mais uma?", tokenColaborador))
@@ -204,15 +212,157 @@ class AssistenteControllerTest {
 
         mockMvc.perform(pergunta(sessaoId, "   ", tokenColaborador))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("pergunta"));
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("conteudo"));
         mockMvc.perform(pergunta(sessaoId, "a".repeat(2001), tokenColaborador))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("pergunta"));
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("conteudo"));
+    }
+
+    @Test
+    void aceitaOApelidoPerguntaNoCorpoDaMensagem() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+
+        // `conteudo` é o nome do contrato; `pergunta` continua aceito para
+        // não quebrar quem integrou com o nome antigo.
+        mockMvc.perform(comToken(post("/api/assistente/sessoes/{id}/mensagens", sessaoId), tokenColaborador)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("pergunta", "Quantos dias de férias o colaborador tem?"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resposta.conteudo", startsWith(ClienteIaFake.PREFIXO_RESPOSTA)));
+    }
+
+    @Test
+    void aSessaoPodeNascerComOTituloEscolhidoPorQuemAbre() throws Exception {
+        String resposta = mockMvc.perform(comToken(post("/api/assistente/sessoes"), tokenColaborador)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("titulo", "Dúvidas de férias"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.titulo").value("Dúvidas de férias"))
+                .andExpect(jsonPath("$.criadoEm").isNotEmpty())
+                .andExpect(jsonPath("$.atualizadoEm").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        UUID sessaoId = UUID.fromString(objectMapper.readTree(resposta).get("id").asText());
+
+        // O título escolhido não é sobrescrito pela primeira pergunta.
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessao.titulo").value("Dúvidas de férias"));
     }
 
     @Test
     void semTokenResponde401() throws Exception {
         mockMvc.perform(post("/api/assistente/sessoes")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/assistente/sessoes")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void listaSoAsSessoesDoProprioUsuarioDaMaisRecenteParaAMaisAntiga() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID primeira = criaSessao(tokenColaborador);
+        UUID segunda = criaSessao(tokenColaborador);
+        criaSessao(tokenAdmin);
+        mockMvc.perform(pergunta(primeira, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+        mockMvc.perform(pergunta(segunda, "E quando posso tirar as férias?", tokenColaborador))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(comToken(get("/api/assistente/sessoes"), tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[0].id").value(segunda.toString()))
+                .andExpect(jsonPath("$.content[1].id").value(primeira.toString()))
+                .andExpect(jsonPath("$.content[0].titulo").value("E quando posso tirar as férias?"));
+    }
+
+    @Test
+    void asMensagensVoltamNaOrdemEmQueForamTrocadas() throws Exception {
+        UUID ferias = publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(comToken(get("/api/assistente/sessoes/{id}/mensagens", sessaoId), tokenColaborador))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].papel").value("USUARIO"))
+                .andExpect(jsonPath("$[0].conteudo").value("Quantos dias de férias o colaborador tem?"))
+                .andExpect(jsonPath("$[0].fontes", hasSize(0)))
+                .andExpect(jsonPath("$[1].papel").value("ASSISTENTE"))
+                .andExpect(jsonPath("$[1].fontes[0]").value("Política de férias"));
+    }
+
+    @Test
+    void ultimaInteracaoMudaACadaMensagemNova() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+        OffsetDateTime aoCriar = chatSessaoRepository.findById(sessaoId).orElseThrow().getUltimaInteracao();
+
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+
+        assertThat(chatSessaoRepository.findById(sessaoId).orElseThrow().getUltimaInteracao()).isAfter(aoCriar);
+    }
+
+    @Test
+    void renomeiaAConversaEscolhidaPeloUsuario() throws Exception {
+        UUID sessaoId = criaSessao(tokenColaborador);
+
+        mockMvc.perform(comToken(patch("/api/assistente/sessoes/{id}", sessaoId), tokenColaborador)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("titulo", "Dúvidas de RH"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.titulo").value("Dúvidas de RH"));
+
+        assertThat(chatSessaoRepository.findById(sessaoId).orElseThrow().getTitulo()).isEqualTo("Dúvidas de RH");
+    }
+
+    @Test
+    void renomearComTituloVazioOuGrandeDemaisResponde400() throws Exception {
+        UUID sessaoId = criaSessao(tokenColaborador);
+
+        mockMvc.perform(renomear(sessaoId, "   ", tokenColaborador))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("titulo"));
+        mockMvc.perform(renomear(sessaoId, "a".repeat(201), tokenColaborador))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("titulo"));
+    }
+
+    @Test
+    void apagarASessaoApagaAsMensagensDela() throws Exception {
+        publicaEIndexa("Política de férias", "Cada colaborador tem trinta dias de férias por ano.");
+        UUID sessaoId = criaSessao(tokenColaborador);
+        mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
+                .andExpect(status().isOk());
+        assertThat(chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId)).isNotEmpty();
+
+        mockMvc.perform(comToken(delete("/api/assistente/sessoes/{id}", sessaoId), tokenColaborador))
+                .andExpect(status().isNoContent());
+
+        assertThat(chatSessaoRepository.findById(sessaoId)).isEmpty();
+        assertThat(chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId)).isEmpty();
+    }
+
+    @Test
+    void conversaDeOutroUsuarioResponde404EmTodasAsRotas() throws Exception {
+        UUID doColaborador = criaSessao(tokenColaborador);
+
+        mockMvc.perform(comToken(get("/api/assistente/sessoes/{id}/mensagens", doColaborador), tokenAdmin))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(renomear(doColaborador, "Tentativa", tokenAdmin))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(comToken(delete("/api/assistente/sessoes/{id}", doColaborador), tokenAdmin))
+                .andExpect(status().isNotFound());
+
+        assertThat(chatSessaoRepository.findById(doColaborador)).isPresent();
+    }
+
+    private MockHttpServletRequestBuilder renomear(UUID sessaoId, String titulo, String token) throws Exception {
+        return comToken(patch("/api/assistente/sessoes/{id}", sessaoId), token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("titulo", titulo)));
     }
 
     private UUID publicaEIndexa(String titulo, String corpo) throws Exception {
@@ -253,7 +403,7 @@ class AssistenteControllerTest {
     private MockHttpServletRequestBuilder pergunta(UUID sessaoId, String texto, String token) throws Exception {
         return comToken(post("/api/assistente/sessoes/{id}/mensagens", sessaoId), token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(json(Map.of("pergunta", texto)));
+                .content(json(Map.of("conteudo", texto)));
     }
 
     private Tenant criaTenant() {

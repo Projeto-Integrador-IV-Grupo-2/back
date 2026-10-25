@@ -73,7 +73,7 @@ class ConsultaAssistenteServiceTest {
                 Clock.fixed(AGORA, ZoneOffset.UTC), properties);
         usuario = new UsuarioAutenticado(UUID.randomUUID(), UUID.randomUUID(), "Pessoa", "p@nexo.com", "{bcrypt}x",
                 Perfil.COLABORADOR, true);
-        sessao = ChatSessao.nova(usuario.getTenantId(), usuario.getId(), ContextoChat.CONHECIMENTO,
+        sessao = ChatSessao.nova(usuario.getTenantId(), usuario.getId(), ContextoChat.CONHECIMENTO, null,
                 OffsetDateTime.now());
         ReflectionTestUtils.setField(sessao, "id", UUID.randomUUID());
     }
@@ -93,11 +93,12 @@ class ConsultaAssistenteServiceTest {
 
         RespostaAssistenteResponse resposta = service.perguntar(sessao.getId(), "  Quantos dias?  ", usuario);
 
-        assertThat(resposta.resposta()).isEqualTo("Trinta dias.");
-        assertThat(resposta.fontes()).extracting(f -> f.conteudoId()).containsExactly(ferias, beneficios);
+        assertThat(resposta.resposta().conteudo()).isEqualTo("Trinta dias.");
+        assertThat(resposta.pergunta().conteudo()).isEqualTo("Quantos dias?");
+        assertThat(resposta.resposta().fontes()).containsExactly("Férias", "Benefícios");
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<FonteMensagem>> fontes = ArgumentCaptor.forClass(List.class);
-        verify(chatSessaoService).registrarTroca(eq(sessao.getId()), eq("Quantos dias?"), any(), eq("Trinta dias."),
+        verify(chatSessaoService).registrarTroca(eq(sessao), eq("Quantos dias?"), any(), eq("Trinta dias."),
                 fontes.capture());
         assertThat(fontes.getValue()).hasSize(3);
         verify(publisher).publishEvent(any(PerguntaRespondidaEvent.class));
@@ -111,8 +112,8 @@ class ConsultaAssistenteServiceTest {
 
         RespostaAssistenteResponse resposta = service.perguntar(sessao.getId(), "Senha do wifi?", usuario);
 
-        assertThat(resposta.resposta()).isEqualTo(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI);
-        assertThat(resposta.fontes()).isEmpty();
+        assertThat(resposta.resposta().conteudo()).isEqualTo(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI);
+        assertThat(resposta.resposta().fontes()).isEmpty();
         verify(clienteIa, never()).gerarResposta(anyString(), anyList());
         ArgumentCaptor<PerguntaRespondidaEvent> evento = ArgumentCaptor.forClass(PerguntaRespondidaEvent.class);
         verify(publisher).publishEvent(evento.capture());
@@ -155,7 +156,7 @@ class ConsultaAssistenteServiceTest {
 
     @Test
     void sessaoDeTrilhasNaoAceitaPergunta() {
-        ChatSessao deTrilhas = ChatSessao.nova(usuario.getTenantId(), usuario.getId(), ContextoChat.TRILHAS,
+        ChatSessao deTrilhas = ChatSessao.nova(usuario.getTenantId(), usuario.getId(), ContextoChat.TRILHAS, null,
                 OffsetDateTime.now());
         when(chatSessaoService.buscarDoUsuario(any(), eq(usuario))).thenReturn(deTrilhas);
 
@@ -168,11 +169,22 @@ class ConsultaAssistenteServiceTest {
         when(chatSessaoService.perguntasDoUsuarioDesde(eq(usuario.getId()), any())).thenReturn(0L);
     }
 
+    /** Devolve a troca montada com os próprios argumentos, como o service real faria. */
     private void dadoQueRegistraATroca(String resposta) {
-        ChatMensagem gravada = ChatMensagem.doAssistente(sessao.getId(), resposta, List.of(),
-                OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC));
-        ReflectionTestUtils.setField(gravada, "id", UUID.randomUUID());
-        when(chatSessaoService.registrarTroca(eq(sessao.getId()), anyString(), any(), eq(resposta), anyList()))
-                .thenReturn(gravada);
+        when(chatSessaoService.registrarTroca(eq(sessao), anyString(), any(), eq(resposta), anyList()))
+                .thenAnswer(chamada -> {
+                    String pergunta = chamada.getArgument(1);
+                    List<FonteMensagem> fontes = chamada.getArgument(4);
+                    OffsetDateTime quando = OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC);
+                    return new TrocaRegistrada(sessao,
+                            comId(ChatMensagem.doUsuario(usuario.getTenantId(), sessao.getId(), pergunta, quando)),
+                            comId(ChatMensagem.doAssistente(usuario.getTenantId(), sessao.getId(), resposta, fontes,
+                                    quando)));
+                });
+    }
+
+    private static ChatMensagem comId(ChatMensagem mensagem) {
+        ReflectionTestUtils.setField(mensagem, "id", UUID.randomUUID());
+        return mensagem;
     }
 }
