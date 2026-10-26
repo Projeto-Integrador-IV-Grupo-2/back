@@ -35,6 +35,11 @@ public class ClienteIaFake implements ClienteIa {
 
     private static final Pattern PERGUNTA = Pattern.compile("<pergunta>\\s*(.*?)\\s*</pergunta>", Pattern.DOTALL);
 
+    private static final Pattern ID_DE_CONTEUDO = Pattern.compile("<conteudo id=\"([^\"]+)\"");
+
+    /** Quantas etapas o rascunho simulado monta, no máximo. */
+    public static final int ETAPAS_SIMULADAS = 3;
+
     private static final Pattern PEDIDO_DE_TRILHA =
             Pattern.compile("(cri|mont|planej|nova trilha|rascunho)", Pattern.CASE_INSENSITIVE);
 
@@ -69,11 +74,25 @@ public class ClienteIaFake implements ClienteIa {
             return "{\"texto\":\"" + json(PREFIXO_RESPOSTA + " para: " + pedido) + "\",\"rascunho\":null}";
         }
         String tema = pedido.length() <= 80 ? pedido : pedido.substring(0, 80).strip();
+        StringBuilder etapas = new StringBuilder();
+        Matcher conteudos = ID_DE_CONTEUDO.matcher(turno);
+        int numero = 0;
+        while (numero < ETAPAS_SIMULADAS && conteudos.find()) {
+            numero++;
+            if (numero > 1) {
+                etapas.append(',');
+            }
+            etapas.append("{\"conteudoId\":\"").append(conteudos.group(1))
+                    .append("\",\"titulo\":\"Etapa ").append(numero)
+                    .append("\",\"descricao\":\"Etapa simulada a partir do catálogo de conteúdos.\"}");
+        }
         return "{\"texto\":\"" + json(TEXTO_RASCUNHO_SIMULADO) + "\",\"rascunho\":{"
                 + "\"nome\":\"" + json("Trilha: " + tema) + "\","
                 + "\"descricao\":\"" + json("Rascunho simulado a partir do pedido: " + pedido) + "\","
                 + "\"objetivos\":\"Entender o tema; aplicar no dia a dia; passar na avaliação\","
-                + "\"prazoDias\":30,\"area\":null}}";
+                + "\"prazoDias\":30,\"area\":null,"
+                + "\"etapas\":[" + etapas + "],"
+                + "\"conteudosFaltando\":[\"" + json("Material introdutório sobre: " + tema) + "\"]}}";
     }
 
     private static String json(String texto) {

@@ -33,21 +33,25 @@ import org.springframework.stereotype.Service;
 public class AjudaDeTrilhasService {
 
     private final ColetorDeDadosDaSugestao coletor;
+    private final ColetorDeConteudos coletorDeConteudos;
     private final ClienteIa clienteIa;
     private final ObjectMapper objectMapper;
 
-    public AjudaDeTrilhasService(ColetorDeDadosDaSugestao coletor, ClienteIa clienteIa,
-                                 ObjectMapper objectMapper) {
+    public AjudaDeTrilhasService(ColetorDeDadosDaSugestao coletor, ColetorDeConteudos coletorDeConteudos,
+                                 ClienteIa clienteIa, ObjectMapper objectMapper) {
         this.coletor = coletor;
+        this.coletorDeConteudos = coletorDeConteudos;
         this.clienteIa = clienteIa;
         this.objectMapper = objectMapper;
     }
 
     public AjudaTrilhasResponse ajudar(String pergunta, UsuarioAutenticado requisitante) {
+        // Os dois coletores leem em transações curtas, que fecham antes do modelo.
         DadosParaSugestao dados = coletor.coletar(requisitante);
-        String turno = PromptDeAjuda.turno(dados.perfil(), dados.catalogo(), pergunta);
+        List<ConteudoCandidato> conteudos = coletorDeConteudos.publicados(requisitante.getTenantId());
+        String turno = PromptDeAjuda.turno(dados.perfil(), dados.catalogo(), conteudos, pergunta);
         String resposta = clienteIa.gerarResposta(PromptDeAjuda.PROMPT_SISTEMA,
                 List.of(MensagemIa.doUsuario(turno))).texto();
-        return PromptDeAjuda.ler(objectMapper, resposta, dados.catalogo());
+        return PromptDeAjuda.ler(objectMapper, resposta, dados.catalogo(), conteudos);
     }
 }

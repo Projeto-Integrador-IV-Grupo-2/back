@@ -338,30 +338,47 @@ caracteres — e responde:
 
 ```json
 {
-  "texto": "Montei um rascunho de 14 dias focado em dados pessoais no dia a dia.",
+  "texto": "Montei uma trilha de 14 dias com 3 etapas, do conceito ao incidente.",
   "rascunho": {
     "nome": "LGPD na prática",
     "descricao": "O que são dados pessoais e sensíveis e como tratá-los.",
     "areaId": null,
     "prazoDias": 14,
-    "objetivos": "Identificar dados sensíveis; comunicar incidentes em até 24h"
+    "objetivos": "Identificar dados sensíveis; comunicar incidentes em até 24h",
+    "etapas": [
+      {
+        "conteudoId": "…",
+        "conteudoTitulo": "Fundamentos de LGPD",
+        "conteudoTipo": "VIDEO",
+        "titulo": "O que a lei protege",
+        "descricao": "Dados pessoais e sensíveis, com exemplos do dia a dia."
+      }
+    ],
+    "conteudosFaltando": ["Exercícios práticos de classificação de dados"]
   }
 }
 ```
 
 `rascunho` só vem quando o pedido é para criar, montar ou planejar uma trilha;
 nos outros casos (o que estudar, quais trilhas combinam com o PDI) é `null`.
-O rascunho **não é gravado**: o front abre o cadastro preenchido e quem cria
-revisa e salva pelo `POST /api/trilhas` de sempre, com as validações dele.
+É uma **trilha completa**: os dados do cadastro, as **etapas em ordem de
+estudo** (de 3 a 10, cada uma com um conteúdo publicado da base) e os temas
+que ainda **não têm conteúdo** para virar etapa. O rascunho **não é gravado**:
+o front mostra a trilha e, quando quem cria confirma, chama o `POST /api/trilhas`
+e o `POST /api/trilhas/{id}/etapas` de sempre, com as validações deles.
 
-- Usa o mesmo `ColetorDeDadosDaSugestao` da sugestão: perfil sem dado pessoal
-  e catálogo de trilhas ativas do tenant que o usuário ainda não concluiu. A IA
-  só cita trilhas desse catálogo.
-- Perfil e catálogo são dado, nunca instrução; o pedido vai entre `<pergunta>`,
-  com as marcações do prompt neutralizadas (inclusive `</pergunta>`).
+- Usa o mesmo `ColetorDeDadosDaSugestao` da sugestão (perfil sem dado pessoal
+  e catálogo de trilhas ativas que o usuário ainda não concluiu) e o
+  `ColetorDeConteudos`, com até 80 conteúdos **publicados** do tenant — o mesmo
+  critério do cadastro de etapa.
+- Perfil, catálogo e conteúdos são dado, nunca instrução; o pedido vai entre
+  `<pergunta>`, com as marcações do prompt neutralizadas (inclusive
+  `</pergunta>` e `<conteudo>`).
 - O rascunho que volta do modelo é saneado (`PromptDeAjuda`): campos cortados
-  aos limites do `CriarTrilhaRequest`, prazo fora de 1–365 vira nulo e a área
-  só é aceita se o nome bater com uma área do catálogo.
+  aos limites do `CriarTrilhaRequest` e do `EtapaRequest`, prazo fora de 1–365
+  vira nulo, a área só é aceita se o nome bater com uma área do catálogo, e
+  **só vira etapa o conteúdo que estava no catálogo enviado** — id inventado ou
+  repetido é descartado. Título e tipo do conteúdo vêm do banco, não do modelo.
 - Resposta sem JSON vira o próprio texto, sem rascunho.
 - Mesma regra de transação da sugestão: banco lido antes, modelo depois.
 - IA fora do ar: **503**, como as outras rotas de IA.

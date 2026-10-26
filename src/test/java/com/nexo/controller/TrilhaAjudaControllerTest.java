@@ -13,6 +13,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexo.dto.LoginRequest;
 import com.nexo.dto.LoginResponse;
 import com.nexo.entity.Area;
+import com.nexo.entity.Conteudo;
+import com.nexo.entity.StatusConteudo;
+import com.nexo.entity.TipoConteudo;
 import com.nexo.entity.Perfil;
 import com.nexo.entity.Tenant;
 import com.nexo.entity.Trilha;
@@ -22,6 +25,7 @@ import com.nexo.ia.ClienteIa;
 import com.nexo.ia.ClienteIaFake;
 import com.nexo.ia.MensagemIa;
 import com.nexo.repository.AreaRepository;
+import com.nexo.repository.ConteudoRepository;
 import com.nexo.repository.TenantRepository;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
@@ -76,10 +80,17 @@ class TrilhaAjudaControllerTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private ConteudoRepository conteudoRepository;
+
     @MockitoSpyBean
     private ClienteIa clienteIa;
 
     private String token;
+    private Conteudo fundamentos;
+    private Conteudo incidentes;
+    private Conteudo rascunhoDeConteudo;
+    private Conteudo deOutraEmpresa;
 
     @BeforeEach
     void prepara() throws Exception {
@@ -88,15 +99,30 @@ class TrilhaAjudaControllerTest {
         Usuario admin = criaUsuario(tenant, suporte);
         token = tokenDe(admin);
         criaTrilha(admin, "Atendimento ao Cliente", suporte);
+        // Em ordem de título: é a ordem do catálogo enviado ao modelo.
+        fundamentos = criaConteudo(admin, "A - Fundamentos de LGPD", StatusConteudo.PUBLICADO);
+        incidentes = criaConteudo(admin, "B - Como reportar incidentes", StatusConteudo.PUBLICADO);
+        rascunhoDeConteudo = criaConteudo(admin, "C - Ainda em rascunho", StatusConteudo.RASCUNHO);
+        Tenant outro = criaTenant();
+        deOutraEmpresa = criaConteudo(criaUsuario(outro, null), "D - De outra empresa",
+                StatusConteudo.PUBLICADO);
     }
 
     @Test
-    void pedidoParaMontarUmaTrilhaDevolveORascunho() throws Exception {
+    void pedidoParaMontarUmaTrilhaDevolveATrilhaCompletaComEtapas() throws Exception {
         mockMvc.perform(pedido("Monte uma trilha de LGPD para o time"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.texto").value(ClienteIaFake.TEXTO_RASCUNHO_SIMULADO))
                 .andExpect(jsonPath("$.rascunho.nome").value("Trilha: Monte uma trilha de LGPD para o time"))
                 .andExpect(jsonPath("$.rascunho.prazoDias").value(30))
+                // Só conteúdo publicado do próprio tenant vira etapa, na ordem do modelo.
+                .andExpect(jsonPath("$.rascunho.etapas.length()").value(2))
+                .andExpect(jsonPath("$.rascunho.etapas[0].conteudoId").value(fundamentos.getId().toString()))
+                .andExpect(jsonPath("$.rascunho.etapas[0].conteudoTitulo").value("A - Fundamentos de LGPD"))
+                .andExpect(jsonPath("$.rascunho.etapas[0].conteudoTipo").value("TEXTO"))
+                .andExpect(jsonPath("$.rascunho.etapas[0].titulo").value("Etapa 1"))
+                .andExpect(jsonPath("$.rascunho.etapas[1].conteudoId").value(incidentes.getId().toString()))
+                .andExpect(jsonPath("$.rascunho.conteudosFaltando[0]").isNotEmpty())
                 .andExpect(jsonPath("$.rascunho.objetivos").isNotEmpty());
     }
 
@@ -119,6 +145,9 @@ class TrilhaAjudaControllerTest {
         String turno = mensagens.getValue().get(0).texto();
         assertThat(turno)
                 .contains("Atendimento ao Cliente")
+                .contains(fundamentos.getId().toString())
+                .doesNotContain(rascunhoDeConteudo.getId().toString())
+                .doesNotContain(deOutraEmpresa.getId().toString())
                 .contains("<pergunta>\nO que devo estudar?\n</pergunta>")
                 .doesNotContain("Usuário de Teste");
     }
@@ -177,6 +206,17 @@ class TrilhaAjudaControllerTest {
         usuario.setArea(area);
         usuario.setAtivo(true);
         return usuarioRepository.saveAndFlush(usuario);
+    }
+
+    private Conteudo criaConteudo(Usuario autor, String titulo, StatusConteudo status) {
+        Conteudo conteudo = new Conteudo();
+        conteudo.setTenant(autor.getTenant());
+        conteudo.setTitulo(titulo);
+        conteudo.setTipo(TipoConteudo.TEXTO);
+        conteudo.setCorpo("Texto do conteúdo " + titulo);
+        conteudo.setStatus(status);
+        conteudo.setCriadoPor(autor);
+        return conteudoRepository.saveAndFlush(conteudo);
     }
 
     private Trilha criaTrilha(Usuario criadoPor, String nome, Area area) {
