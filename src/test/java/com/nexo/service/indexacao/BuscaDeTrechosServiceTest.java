@@ -46,7 +46,7 @@ class BuscaDeTrechosServiceTest {
     void prepara() {
         clienteIa = spy(new ClienteIaFake(IaProperties.DIMENSOES_PADRAO));
         IaProperties properties = new IaProperties("fake", null, null, null, null, null, null, null, null,
-                new IaProperties.Busca(5, DISTANCIA_MAXIMA), null);
+                new IaProperties.Busca(5, DISTANCIA_MAXIMA), null, null);
         service = new BuscaDeTrechosService(clienteIa, chunkRepository, properties);
     }
 
