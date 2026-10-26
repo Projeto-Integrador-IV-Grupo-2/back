@@ -50,12 +50,13 @@ class MontadorDePromptConhecimentoTest {
 
     @Test
     void historicoEntraEmOrdemComecandoPeloUsuario() {
+        UUID tenant = UUID.randomUUID();
         UUID sessao = UUID.randomUUID();
         OffsetDateTime agora = OffsetDateTime.now();
         List<ChatMensagem> historico = List.of(
-                ChatMensagem.doAssistente(sessao, "resposta solta", List.of(), agora.minusMinutes(3)),
-                ChatMensagem.doUsuario(sessao, "pergunta 1", agora.minusMinutes(2)),
-                ChatMensagem.doAssistente(sessao, "resposta 1", List.of(), agora.minusMinutes(1)));
+                ChatMensagem.doAssistente(tenant, sessao, "resposta solta", List.of(), agora.minusMinutes(3)),
+                ChatMensagem.doUsuario(tenant, sessao, "pergunta 1", agora.minusMinutes(2)),
+                ChatMensagem.doAssistente(tenant, sessao, "resposta 1", List.of(), agora.minusMinutes(1)));
 
         PromptMontado prompt = montador.montar("pergunta 2", List.of(trecho("T", "x")), historico);
 

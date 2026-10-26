@@ -20,6 +20,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param indexacao       divisão dos documentos em trechos e nova tentativa
  * @param busca           quantos trechos buscar e o quão parecidos precisam ser
  * @param consulta        limites do endpoint de perguntas
+ * @param sugestao        limites da sugestão de trilhas pela IA
  */
 @ConfigurationProperties(prefix = "app.ia")
 public record IaProperties(
@@ -33,7 +34,8 @@ public record IaProperties(
         Integer maxTentativas,
         Indexacao indexacao,
         Busca busca,
-        Consulta consulta) {
+        Consulta consulta,
+        Sugestao sugestao) {
 
     public static final int DIMENSOES_PADRAO = 768;
 
@@ -48,6 +50,7 @@ public record IaProperties(
         indexacao = indexacao == null ? new Indexacao(null, null, null, null) : indexacao;
         busca = busca == null ? new Busca(null, null) : busca;
         consulta = consulta == null ? new Consulta(null, null) : consulta;
+        sugestao = sugestao == null ? new Sugestao(null, null, null) : sugestao;
     }
 
     public boolean temChave() {
@@ -93,6 +96,21 @@ public record IaProperties(
         public Consulta {
             perguntasPorMinuto = perguntasPorMinuto == null || perguntasPorMinuto < 1 ? 10 : perguntasPorMinuto;
             mensagensHistorico = mensagensHistorico == null || mensagensHistorico < 0 ? 6 : mensagensHistorico;
+        }
+    }
+
+    /**
+     * @param maximo          quantas trilhas a IA pode indicar de uma vez
+     * @param catalogoMaximo  teto de trilhas enviadas ao modelo, para o prompt não crescer sem limite
+     * @param validade        por quanto tempo a sugestão de um usuário fica guardada
+     */
+    public record Sugestao(Integer maximo, Integer catalogoMaximo, Duration validade) {
+
+        public Sugestao {
+            maximo = maximo == null || maximo < 1 ? 5 : maximo;
+            catalogoMaximo = catalogoMaximo == null || catalogoMaximo < 1 ? 60 : catalogoMaximo;
+            validade = validade == null || validade.isNegative() || validade.isZero()
+                    ? Duration.ofMinutes(15) : validade;
         }
     }
 

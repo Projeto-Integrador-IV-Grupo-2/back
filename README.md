@@ -274,6 +274,61 @@ Filtros de `GET /api/trilhas`, todos opcionais e combináveis:
 | `status` | Status do **meu** progresso: `NAO_INICIADA` (inclui as que nunca iniciei), `EM_ANDAMENTO`, `CONCLUIDA`, `ATRASADA` |
 | `minhas=true` | Só as trilhas que iniciei ou recebi; aceita `sort=prazo` (sem prazo no fim) |
 | `recomendar=AREA` | Trilhas da minha área primeiro; a ordenação pedida vale entre elas |
+| `recomendar=IA` | Trilhas que a IA indicou primeiro, na ordem dela. Usa só o que já foi calculado por `GET /api/trilhas/sugestoes`: **ordenar uma página nunca chama o modelo**. Sem nada guardado, a ordem não muda |
+
+### Sugestão de trilhas pela IA
+
+`GET /api/trilhas/sugestoes` (qualquer autenticado) devolve até
+`IA_SUGESTAO_MAXIMO` trilhas, cada uma com um motivo curto em português:
+
+```json
+{
+  "geradoPorIa": true,
+  "aviso": null,
+  "sugestoes": [
+    {
+      "id": "…", "nome": "Atendimento ao Cliente",
+      "area": { "id": "…", "nome": "Suporte" },
+      "objetivos": "Resolver conflitos",
+      "motivo": "Você atende clientes todo dia e ainda não fez esta trilha."
+    }
+  ]
+}
+```
+
+É diferente de `recomendar=AREA`, que só reordena a listagem sem usar IA. Aqui:
+
+1. O catálogo enviado ao modelo são as trilhas **ativas do tenant que o usuário
+   ainda não concluiu** (id, nome, área e objetivos). Nenhuma trilha de outra
+   empresa entra no prompt.
+2. O perfil enviado é **só** área, cargo, trilhas concluídas e em andamento e
+   as competências do PDI ativo. Nome, e-mail e ids do usuário ficam de fora.
+3. O texto das trilhas é **dado, nunca instrução**: marcações `<catalogo>`,
+   `<perfil>` e `<trilha>` vindas do cadastro são neutralizadas.
+4. **Só id que estava no catálogo enviado é aceito.** Id inventado pelo modelo é
+   descartado em silêncio, então nunca aparece trilha inexistente, inativa, de
+   outro tenant ou já concluída.
+5. O resultado fica guardado por usuário por `IA_SUGESTAO_VALIDADE`: dois
+   acessos seguidos chamam o modelo uma vez só. Iniciar ou concluir uma trilha
+   publica um evento que o `SugestoesDeTrilhaListener` usa para invalidar o
+   que estava guardado.
+6. **Com a IA fora do ar** — ou com uma resposta que não rendeu nenhuma trilha
+   válida — a resposta continua **200**, com `geradoPorIa: false`, o `aviso`
+   preenchido e a recomendação por área no lugar.
+
+As duas formas de recomendar são estratégias do mesmo tipo
+(`EstrategiaRecomendacao`), registradas na `EstrategiaRecomendacaoFactory`:
+cair da IA para a área é escolher outro critério, não um `if` espalhado pelo
+service.
+
+**O banco é lido antes, não durante.** O `ColetorDeDadosDaSugestao` monta o
+catálogo e o perfil numa transação curta e devolve records desligados do JPA
+(`TrilhaCandidata`, `PerfilDoUsuario`); a transação fecha e só então o modelo
+é consultado. Uma chamada pode levar `IA_TIMEOUT` × `IA_MAX_TENTATIVAS`, e
+segurar uma conexão do pool por esse tempo esgotaria o Hikari sob carga — a
+mesma razão pela qual o `ConsultaAssistenteService` não é transacional. Por
+isso a `RecomendacaoPorIa` não conhece repository nenhum: recebendo só
+records, não há lazy loading possível fora da transação.
 
 ### Atribuição
 
@@ -414,7 +469,10 @@ até `IA_MAX_TENTATIVAS` tentativas, com espera crescente. A chave vai só no
 header da chamada: nunca entra em log nem em resposta.
 
 Nos testes (`IA_PROVEDOR=fake`, já definido no perfil `test`), o
-`ClienteIaFake` gera embeddings e respostas determinísticos, sem rede.
+`ClienteIaFake` gera embeddings e respostas determinísticos, sem rede. Ele
+reconhece o prompt da sugestão de trilhas e responde o JSON daquele fluxo,
+escolhendo as primeiras trilhas do catálogo recebido — então
+`GET /api/trilhas/sugestoes` funciona de ponta a ponta com o provedor `fake`.
 
 ### Indexação dos documentos
 
@@ -471,10 +529,43 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 
 | Endpoint | Acesso | O que faz |
 |---|---|---|
-| `POST /api/assistente/sessoes` | autenticado | Cria uma sessão de conversa. Corpo opcional `{"contexto": "CONHECIMENTO"}`, que já é o padrão |
-| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"pergunta": "..."}` com até 2000 caracteres. Devolve `resposta`, `fontes` (`conteudoId` e `titulo` de cada documento usado), `mensagemId` e `criadoEm` |
+| `POST /api/assistente/sessoes` | autenticado | Cria uma conversa. Corpo opcional `{"titulo": "...", "contexto": "CONHECIMENTO"}` — a tela manda o começo da primeira pergunta como título; sem ele, o título nasce da primeira troca |
+| `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga. A ordem é fixa: `sort` na query é ignorado |
+| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"conteudo": "..."}` com até 2000 caracteres (`pergunta` segue aceito como apelido). Devolve a troca inteira: `sessao`, `pergunta` e `resposta` |
+| `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `id`, `papel`, `conteudo`, `fontes` e `criadoEm` |
+| `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 200 caracteres — renomeia a conversa |
+| `DELETE /api/assistente/sessoes/{id}` | autenticado | **204**. Apaga a conversa e, junto, todas as mensagens dela |
 
-Listar, renomear e apagar sessões e ler o histórico ficam para a issue #59.
+Formato de uma conversa e de uma mensagem:
+
+```json
+{ "id": "…", "contexto": "CONHECIMENTO", "titulo": "Quantos dias de férias?",
+  "criadoEm": "2026-10-25T12:00:00Z", "atualizadoEm": "2026-10-25T12:03:00Z" }
+
+{ "id": "…", "papel": "ASSISTENTE", "conteudo": "…",
+  "fontes": ["Política de férias"], "criadoEm": "2026-10-25T12:03:00Z" }
+```
+
+> **Os nomes do JSON não são os das colunas.** `criadoEm` e `atualizadoEm`
+> saem de `iniciado_em` e `ultima_interacao`, e `fontes` é uma lista de
+> títulos em vez de objetos. Foi uma decisão do grupo: a tela do histórico
+> (front #55) já estava escrita contra esse contrato, e adaptar a API saiu
+> mais barato do que refazer a tela. O banco continua igual ao DER; só a
+> borda muda. `titulo` nunca volta nulo — enquanto a conversa não tem nome
+> próprio, vale `"Nova conversa"`.
+
+**Cada um só enxerga as próprias conversas — inclusive o admin.** Sessão de
+outra pessoa ou de outro tenant responde **404** em todas as rotas acima, como
+se não existisse.
+
+A **V22** alinhou o chat ao DER em três pontos que a V20 tinha deixado de
+fora: `chat_sessao.titulo` passou de 120 para **200** caracteres,
+`iniciada_em` virou **`iniciado_em`** (e o JSON da resposta acompanha, como
+`iniciadoEm`) e `chat_mensagem` ganhou **`tenant_id`**, com a mesma chave
+composta por tenant que a V14 criou para as outras tabelas — antes ela era a
+única tabela do schema sem a coluna, e o isolamento dependia só de passar por
+`chat_sessao`. A mesma migration criou o `historico_interacao.sessao_id` que a
+V18 havia registrado como "adiado até existir a tabela de sessões".
 
 O fluxo de uma pergunta é este:
 
@@ -494,9 +585,21 @@ O fluxo de uma pergunta é este:
    `<documento>` vindas do próprio texto são neutralizadas.
 6. A pergunta e a resposta são gravadas **juntas** em `chat_mensagem`, com os
    trechos usados em `fontes` (JSON). Se o provedor cair, a resposta é **503** e
-   nada fica gravado pela metade. A primeira pergunta vira o título da sessão.
-7. A API publica `PerguntaRespondidaEvent`, ponto de extensão para o
-   `historico_interacao` da issue #48.
+   nada fica gravado pela metade.
+7. A gravação publica `MensagemRegistradaEvent`. O `SessaoDoChatListener`
+   escuta e é quem atualiza `ultima_interacao` e dá título à conversa a partir
+   do começo da primeira pergunta — o service que grava a mensagem não mexe na
+   sessão.
+8. A API publica também `PerguntaRespondidaEvent`, e o
+   `HistoricoInteracaoListener` grava a consulta no `historico_interacao` como
+   `ASSISTENTE_CONSULTADO`, com `sessao_id` preenchido. Os detalhes guardam só
+   `mensagemId`, `encontrouFontes` e `quantidadeFontes` — **nunca** a pergunta
+   nem a resposta.
+
+   Esse listener é `@EventListener` simples, e não `@TransactionalEventListener`:
+   o evento é publicado **fora de transação** (a chamada ao modelo não pode
+   segurar conexão do banco), então um listener ligado ao commit nunca
+   dispararia e a gravação sumiria em silêncio.
 
 Perguntas e respostas **não vão para o log** da aplicação. Resposta em
 streaming (SSE) não foi implementada, porque a issue a marca como opcional.
@@ -687,10 +790,6 @@ define-se a variável e ela prevalece.
 | `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
 | `IA_PERGUNTAS_POR_MINUTO` | `10` | Perguntas ao assistente aceitas por usuário a cada minuto |
 | `IA_MENSAGENS_HISTORICO` | `6` | Mensagens anteriores da sessão que entram no prompt |
-| `DOCUMENTOS_TAMANHO_MAXIMO` | `10MB` | Maior arquivo aceito no upload de documentos (vale também para o multipart) |
-| `DOCUMENTOS_TAMANHO_MAXIMO_REQUISICAO` | `12MB` | Tamanho máximo da requisição multipart inteira (arquivo + campos) |
-| `ARMAZENAMENTO_TIPO` | `local` | Onde ficam os binários dos arquivos; hoje só `local` |
-| `ARMAZENAMENTO_DIRETORIO` | `./data/arquivos` | Pasta dos arquivos no armazenamento `local` (fora do Git) |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 

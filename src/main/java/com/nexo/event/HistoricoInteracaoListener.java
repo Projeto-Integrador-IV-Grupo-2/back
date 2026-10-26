@@ -3,6 +3,7 @@ package com.nexo.event;
 import com.nexo.service.HistoricoInteracaoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -37,12 +38,27 @@ public class HistoricoInteracaoListener {
         tentarRegistrar("TRILHA_CONCLUIDA", evento.trilhaId(), () -> historicoService.registrar(evento));
     }
 
-    private void tentarRegistrar(String tipo, java.util.UUID trilhaId, Runnable gravacao) {
+    /**
+     * Consulta ao assistente (issue #59).
+     *
+     * <p>Aqui é {@code @EventListener} simples, e não
+     * {@code @TransactionalEventListener}: o {@code ConsultaAssistenteService}
+     * publica este evento <strong>fora de transação</strong>, de propósito (a
+     * chamada ao modelo não pode segurar conexão do banco). Um listener
+     * ligado ao commit nunca dispararia, e a gravação sumiria em silêncio. O
+     * {@code registrar} abre a própria transação ({@code REQUIRES_NEW}).</p>
+     */
+    @EventListener
+    public void aoResponderPergunta(PerguntaRespondidaEvent evento) {
+        tentarRegistrar("ASSISTENTE_CONSULTADO", evento.sessaoId(), () -> historicoService.registrar(evento));
+    }
+
+    private void tentarRegistrar(String tipo, java.util.UUID referencia, Runnable gravacao) {
         try {
             gravacao.run();
         } catch (RuntimeException ex) {
-            log.error("Falha ao gravar {} no histórico para a trilha {}. A operação principal foi preservada.",
-                    tipo, trilhaId, ex);
+            log.error("Falha ao gravar {} no histórico para {}. A operação principal foi preservada.",
+                    tipo, referencia, ex);
         }
     }
 }

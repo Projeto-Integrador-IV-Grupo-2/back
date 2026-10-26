@@ -42,7 +42,7 @@ class GeminiClienteIaTest {
         RestClient.Builder builder = RestClient.builder();
         servidor = MockRestServiceServer.bindTo(builder).build();
         IaProperties properties = new IaProperties("gemini", chave, BASE, "gemini-teste", "embedding-teste", 3,
-                Duration.ofSeconds(1), maxTentativas, null, null, null);
+                Duration.ofSeconds(1), maxTentativas, null, null, null, null);
         return new GeminiClienteIa(builder.build(), properties, Duration.ZERO);
     }
 

@@ -1,12 +1,15 @@
 package com.nexo.service;
 
+import com.nexo.entity.ChatSessao;
 import com.nexo.entity.HistoricoInteracao;
 import com.nexo.entity.Tenant;
 import com.nexo.entity.TipoInteracaoHistorico;
 import com.nexo.entity.Usuario;
+import com.nexo.event.PerguntaRespondidaEvent;
 import com.nexo.event.TrilhaAcessadaEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.event.TrilhaIniciadaEvent;
+import com.nexo.repository.ChatSessaoRepository;
 import com.nexo.repository.TenantRepository;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
@@ -20,12 +23,15 @@ public class HistoricoInteracaoFactory {
     private final TenantRepository tenantRepository;
     private final UsuarioRepository usuarioRepository;
     private final TrilhaRepository trilhaRepository;
+    private final ChatSessaoRepository chatSessaoRepository;
 
     public HistoricoInteracaoFactory(TenantRepository tenantRepository, UsuarioRepository usuarioRepository,
-                                     TrilhaRepository trilhaRepository) {
+                                     TrilhaRepository trilhaRepository,
+                                     ChatSessaoRepository chatSessaoRepository) {
         this.tenantRepository = tenantRepository;
         this.usuarioRepository = usuarioRepository;
         this.trilhaRepository = trilhaRepository;
+        this.chatSessaoRepository = chatSessaoRepository;
     }
 
     public HistoricoInteracao para(TrilhaAcessadaEvent evento) {
@@ -44,6 +50,25 @@ public class HistoricoInteracaoFactory {
                 .orElse("Trilha removida");
         return criar(evento.trilhaId(), trilhaNome, evento.tenantId(), evento.usuarioId(),
                 TipoInteracaoHistorico.TRILHA_CONCLUIDA, "progresso da trilha atualizado para CONCLUIDA");
+    }
+
+    /**
+     * Consulta ao assistente (issue #59). Guarda a sessão em {@code sessao_id}
+     * — a coluna que a V18 deixou adiada até a tabela existir — e, nos
+     * detalhes, só o que é seguro auditar: nunca a pergunta nem a resposta.
+     */
+    public HistoricoInteracao para(PerguntaRespondidaEvent evento) {
+        HistoricoInteracao historico = new HistoricoInteracao();
+        historico.setTenant(tenantRepository.getReferenceById(evento.tenantId()));
+        historico.setUsuario(usuarioRepository.getReferenceById(evento.usuarioId()));
+        historico.setSessao(chatSessaoRepository.getReferenceById(evento.sessaoId()));
+        historico.setTipo(TipoInteracaoHistorico.ASSISTENTE_CONSULTADO);
+        historico.setDetalhes(Map.of(
+                "mensagemId", evento.mensagemId().toString(),
+                "encontrouFontes", evento.encontrouFontes(),
+                "quantidadeFontes", evento.quantidadeFontes(),
+                "origem", "POST /api/assistente/sessoes/{id}/mensagens"));
+        return historico;
     }
 
     private HistoricoInteracao criar(java.util.UUID trilhaId, String trilhaNome,

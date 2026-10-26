@@ -7,5 +7,13 @@ package com.nexo.repository;
 public enum CriterioRecomendacao {
 
     /** Trilhas da área do usuário autenticado primeiro. */
-    AREA
+    AREA,
+
+    /**
+     * Trilhas que a IA indicou para o usuário primeiro, na ordem em que ela
+     * indicou. Na listagem vale só o que já foi calculado por
+     * {@code GET /api/trilhas/sugestoes}: ordenar uma página nunca chama o
+     * modelo.
+     */
+    IA
 }

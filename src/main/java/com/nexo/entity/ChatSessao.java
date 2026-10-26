@@ -18,7 +18,11 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "chat_sessao")
 public class ChatSessao {
 
+    /** Caracteres da pergunta que viram o título automático da conversa. */
     public static final int TAMANHO_TITULO = 60;
+
+    /** Limite da coluna {@code titulo} no DER — o que o usuário pode escrever ao renomear. */
+    public static final int TAMANHO_MAXIMO_TITULO = 200;
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -35,11 +39,11 @@ public class ChatSessao {
     @Column(name = "contexto", nullable = false, columnDefinition = "contexto_chat")
     private ContextoChat contexto;
 
-    @Column(name = "titulo", length = 120)
+    @Column(name = "titulo", length = TAMANHO_MAXIMO_TITULO)
     private String titulo;
 
-    @Column(name = "iniciada_em", nullable = false, updatable = false)
-    private OffsetDateTime iniciadaEm;
+    @Column(name = "iniciado_em", nullable = false, updatable = false)
+    private OffsetDateTime iniciadoEm;
 
     @Column(name = "ultima_interacao", nullable = false)
     private OffsetDateTime ultimaInteracao;
@@ -47,14 +51,24 @@ public class ChatSessao {
     protected ChatSessao() {
     }
 
-    /** Factory Method: sessão nova, ainda sem título (ele nasce da primeira pergunta). */
-    public static ChatSessao nova(UUID tenantId, UUID usuarioId, ContextoChat contexto, OffsetDateTime agora) {
+    /**
+     * Factory Method: sessão nova.
+     *
+     * <p>O título é opcional: quem cria pode já mandar um (é o que a tela do
+     * histórico faz, com o começo da primeira pergunta). Sem ele, a sessão
+     * nasce sem título e ganha um na primeira troca de mensagens.</p>
+     */
+    public static ChatSessao nova(UUID tenantId, UUID usuarioId, ContextoChat contexto, String titulo,
+                                  OffsetDateTime agora) {
         ChatSessao sessao = new ChatSessao();
         sessao.tenantId = tenantId;
         sessao.usuarioId = usuarioId;
         sessao.contexto = contexto == null ? ContextoChat.CONHECIMENTO : contexto;
-        sessao.iniciadaEm = agora;
+        sessao.iniciadoEm = agora;
         sessao.ultimaInteracao = agora;
+        if (titulo != null && !titulo.isBlank()) {
+            sessao.renomear(titulo);
+        }
         return sessao;
     }
 
@@ -65,6 +79,15 @@ public class ChatSessao {
             String limpa = pergunta.strip().replaceAll("\\s+", " ");
             titulo = limpa.length() <= TAMANHO_TITULO ? limpa : limpa.substring(0, TAMANHO_TITULO).strip() + "…";
         }
+    }
+
+    /**
+     * Renomeia a conversa. O texto é normalizado e cortado no limite da
+     * coluna, para o usuário nunca receber 500 por um título comprido.
+     */
+    public void renomear(String novoTitulo) {
+        String limpo = novoTitulo == null ? "" : novoTitulo.strip().replaceAll("\\s+", " ");
+        titulo = limpo.length() <= TAMANHO_MAXIMO_TITULO ? limpo : limpo.substring(0, TAMANHO_MAXIMO_TITULO).strip();
     }
 
     public UUID getId() {
@@ -87,8 +110,8 @@ public class ChatSessao {
         return titulo;
     }
 
-    public OffsetDateTime getIniciadaEm() {
-        return iniciadaEm;
+    public OffsetDateTime getIniciadoEm() {
+        return iniciadoEm;
     }
 
     public OffsetDateTime getUltimaInteracao() {

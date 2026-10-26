@@ -1,8 +1,9 @@
 package com.nexo.service.assistente;
 
 import com.nexo.config.IaProperties;
-import com.nexo.dto.assistente.FonteResponse;
+import com.nexo.dto.assistente.MensagemResponse;
 import com.nexo.dto.assistente.RespostaAssistenteResponse;
+import com.nexo.dto.assistente.SessaoResponse;
 import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
 import com.nexo.entity.FonteMensagem;
@@ -14,9 +15,7 @@ import com.nexo.service.indexacao.TrechoEncontrado;
 import com.nexo.security.UsuarioAutenticado;
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -96,13 +95,13 @@ public class ConsultaAssistenteService {
         List<FonteMensagem> fontes = encontrados.stream()
                 .map(trecho -> new FonteMensagem(trecho.conteudoId(), trecho.titulo(), trecho.chunkId(), trecho.ordem()))
                 .toList();
-        ChatMensagem mensagem = chatSessaoService.registrarTroca(sessaoId, texto, agora, resposta, fontes);
-        List<FonteResponse> documentos = documentosDistintos(encontrados);
+        TrocaRegistrada troca = chatSessaoService.registrarTroca(sessao, texto, agora, resposta, fontes);
+        MensagemResponse daResposta = MensagemResponse.de(troca.resposta());
 
         publisher.publishEvent(new PerguntaRespondidaEvent(usuario.getTenantId(), usuario.getId(), sessaoId,
-                mensagem.getId(), !documentos.isEmpty(), documentos.size()));
-        return new RespostaAssistenteResponse(mensagem.getId(), mensagem.getConteudo(), documentos,
-                mensagem.getCriadoEm());
+                troca.resposta().getId(), !daResposta.fontes().isEmpty(), daResposta.fontes().size()));
+        return new RespostaAssistenteResponse(SessaoResponse.de(troca.sessao()),
+                MensagemResponse.de(troca.pergunta()), daResposta);
     }
 
     private void exigirDentroDoLimite(UUID usuarioId, OffsetDateTime agora) {
@@ -111,13 +110,5 @@ public class ConsultaAssistenteService {
             throw new LimiteDePerguntasExcedidoException(
                     "Você fez muitas perguntas em pouco tempo. Aguarde um minuto e tente de novo.", JANELA_SEGUNDOS);
         }
-    }
-
-    /** Um item por documento, na ordem de relevância do primeiro trecho dele. */
-    private static List<FonteResponse> documentosDistintos(List<TrechoEncontrado> encontrados) {
-        Map<UUID, FonteResponse> porDocumento = new LinkedHashMap<>();
-        encontrados.forEach(trecho -> porDocumento.putIfAbsent(trecho.conteudoId(),
-                new FonteResponse(trecho.conteudoId(), trecho.titulo())));
-        return List.copyOf(porDocumento.values());
     }
 }
