@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -112,13 +113,16 @@ class BuscaDeTrechosServiceTest {
     }
 
     @Test
-    void nuncaConsultaOutroTenant() {
+    void cadaBuscaChegaAoBancoComOTenantDeQuemPerguntou() {
         UUID outroTenant = UUID.randomUUID();
-        when(chunkRepository.buscarParecidos(eq(tenantId), anyString(), anyInt())).thenReturn(List.of());
+        when(chunkRepository.buscarParecidos(any(), anyString(), anyInt())).thenReturn(List.of());
 
         service.buscar(tenantId, "férias", 5);
+        service.buscar(outroTenant, "férias", 5);
 
-        verify(chunkRepository, never()).buscarParecidos(eq(outroTenant), anyString(), anyInt());
+        ArgumentCaptor<UUID> tenants = ArgumentCaptor.forClass(UUID.class);
+        verify(chunkRepository, times(2)).buscarParecidos(tenants.capture(), anyString(), anyInt());
+        assertThat(tenants.getAllValues()).containsExactly(tenantId, outroTenant);
     }
 
     @Test
