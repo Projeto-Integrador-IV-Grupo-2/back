@@ -42,10 +42,10 @@ public record IaProperties(
     public IaProperties {
         provedor = textoOu(provedor, "gemini");
         urlBase = textoOu(urlBase, "https://generativelanguage.googleapis.com/v1beta");
-        modelo = textoOu(modelo, "gemini-2.5-flash");
+        modelo = textoOu(modelo, "gemini-flash-latest");
         modeloEmbedding = textoOu(modeloEmbedding, "gemini-embedding-001");
         dimensoes = dimensoes == null || dimensoes <= 0 ? DIMENSOES_PADRAO : dimensoes;
-        timeout = timeout == null || timeout.isNegative() || timeout.isZero() ? Duration.ofSeconds(20) : timeout;
+        timeout = timeout == null || timeout.isNegative() || timeout.isZero() ? Duration.ofSeconds(60) : timeout;
         maxTentativas = maxTentativas == null || maxTentativas < 1 ? 3 : maxTentativas;
         indexacao = indexacao == null ? new Indexacao(null, null, null, null) : indexacao;
         busca = busca == null ? new Busca(null, null) : busca;

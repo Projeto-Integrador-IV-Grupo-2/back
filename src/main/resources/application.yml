@@ -87,10 +87,10 @@ app:
     provedor: ${IA_PROVEDOR:gemini}             # gemini | fake
     api-key: ${IA_API_KEY:}
     url-base: ${IA_URL_BASE:https://generativelanguage.googleapis.com/v1beta}
-    modelo: ${IA_MODELO:gemini-2.5-flash}
+    modelo: ${IA_MODELO:gemini-flash-latest}           # alias do Flash atual: o 2.5 saiu para contas novas
     modelo-embedding: ${IA_MODELO_EMBEDDING:gemini-embedding-001}
     dimensoes: 768                              # fixo: é o tamanho da coluna vector(768) da V14
-    timeout: ${IA_TIMEOUT:PT20S}
+    timeout: ${IA_TIMEOUT:PT60S}                 # o Flash atual raciocina antes de responder
     max-tentativas: ${IA_MAX_TENTATIVAS:3}
     indexacao:
       tamanho-trecho: ${IA_TAMANHO_TRECHO:1000}

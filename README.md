@@ -14,7 +14,7 @@ dashboards.
 | Framework | Spring Boot | 3.4 |
 | Web / REST | Spring Web (MVC) | — |
 | Banco de dados | PostgreSQL + pgvector | 16 |
-| Assistente de IA | Google Gemini (chat + embeddings) | `gemini-2.5-flash` / `gemini-embedding-001` |
+| Assistente de IA | Google Gemini (chat + embeddings) | `gemini-flash-latest` / `gemini-embedding-001` |
 | Acesso a dados | Spring Data JPA (Hibernate) | — |
 | Migrations | Flyway | — |
 | Segurança | Spring Security | — |
@@ -505,7 +505,7 @@ nova implementação e acrescentá-la na `ClienteIaFactory`, escolhida por
 
 | Critério | Google Gemini (escolhido) | OpenAI |
 |---|---|---|
-| Chat | `gemini-2.5-flash` | `gpt-4o-mini` |
+| Chat | `gemini-flash-latest` (alias do Flash atual) | `gpt-4o-mini` |
 | Embeddings | `gemini-embedding-001` (768 dimensões via `outputDimensionality`) | `text-embedding-3-small` (1536) |
 | Custo | Camada gratuita com limite diário, suficiente para o projeto | Pago desde a primeira chamada |
 | Português | Bom em chat e em busca semântica | Bom |
@@ -825,9 +825,9 @@ define-se a variável e ela prevalece.
 | `VIMEO_TIMEOUT` | `PT5S` | Tempo máximo de espera pela resposta do Vimeo |
 | `IA_PROVEDOR` | `gemini` | Implementação do `ClienteIa`: `gemini` ou `fake` (testes) |
 | `IA_API_KEY` | *(vazio)* | Chave da API do Gemini ([Google AI Studio](https://aistudio.google.com/apikey)). Sem ela, as rotas de IA respondem 503 |
-| `IA_MODELO` | `gemini-2.5-flash` | Modelo de chat |
+| `IA_MODELO` | `gemini-flash-latest` | Modelo de chat. É um alias que o Google mantém no Flash atual: o `gemini-2.5-flash` responde 404 para contas criadas depois da aposentadoria dele |
 | `IA_MODELO_EMBEDDING` | `gemini-embedding-001` | Modelo de embeddings (sempre com 768 dimensões) |
-| `IA_TIMEOUT` | `PT20S` | Tempo máximo de cada chamada ao provedor |
+| `IA_TIMEOUT` | `PT60S` | Tempo máximo de cada chamada ao provedor. O Flash atual raciocina antes de responder e passa dos 20 s com prompts grandes, como o da trilha completa |
 | `IA_MAX_TENTATIVAS` | `3` | Tentativas por chamada em timeout, 429 ou 5xx |
 | `IA_TAMANHO_TRECHO` | `1000` | Máximo de caracteres por trecho indexado |
 | `IA_SOBREPOSICAO_TRECHO` | `200` | Caracteres repetidos entre trechos vizinhos |
