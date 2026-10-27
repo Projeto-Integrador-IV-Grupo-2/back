@@ -23,6 +23,13 @@
         <jjwt.version>0.12.6</jjwt.version>
         <pdfbox.version>3.0.3</pdfbox.version>
         <poi.version>5.3.0</poi.version>
+        <!--
+            O Spring Boot 3.4.2 traz o Testcontainers 1.20.4, que fala com o
+            Docker na API 1.32. O Docker 29 exige no mínimo a 1.40 e recusa a
+            conexão ("Could not find a valid Docker environment"). A 1.21.x
+            negocia a versão da API e roda com o Docker atual.
+        -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
