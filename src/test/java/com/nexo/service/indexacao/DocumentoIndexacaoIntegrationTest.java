@@ -10,18 +10,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexo.dto.LoginRequest;
 import com.nexo.dto.LoginResponse;
-import com.nexo.entity.IndexacaoConteudo;
 import com.nexo.entity.Perfil;
-import com.nexo.entity.StatusIndexacao;
 import com.nexo.entity.Tenant;
 import com.nexo.entity.Usuario;
 import com.nexo.repository.ConteudoChunkRepository;
-import com.nexo.repository.ConteudoRepository;
-import com.nexo.repository.IndexacaoConteudoRepository;
 import com.nexo.repository.TenantRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.service.documento.ArquivosDeTeste;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -77,12 +72,6 @@ class DocumentoIndexacaoIntegrationTest {
     @Autowired
     private BuscaDeTrechosService buscaDeTrechosService;
 
-    @Autowired
-    private IndexacaoConteudoRepository indexacaoRepository;
-
-    @Autowired
-    private ConteudoRepository conteudoRepository;
-
     private Tenant tenant;
     private String token;
 
@@ -117,25 +106,6 @@ class DocumentoIndexacaoIntegrationTest {
 
         await().atMost(ESPERA).until(() -> textoIndexado(id).contains("trabalho remoto"));
         assertThat(textoIndexado(id)).contains("férias");
-    }
-
-    @Test
-    void arquivoIlegivelRegistraFalhaSemQuebrarAPublicacao() throws Exception {
-        UUID id = criaDocumento("Relatório corrompido");
-        byte[] pdfCorrompido = "%PDF-1.7\nisto nao e um pdf de verdade".getBytes(StandardCharsets.US_ASCII);
-        envia(id, "relatorio.pdf", pdfCorrompido);
-
-        publica(id);
-
-        await().atMost(ESPERA).until(() -> indexacaoRepository.findById(id)
-                .map(indexacao -> indexacao.getStatus() == StatusIndexacao.FALHOU)
-                .orElse(false));
-        IndexacaoConteudo indexacao = indexacaoRepository.findById(id).orElseThrow();
-        assertThat(indexacao.getTentativas()).isEqualTo(1);
-        assertThat(indexacao.getUltimoErro()).isNotBlank();
-        assertThat(indexacao.getProximaTentativaEm()).isNotNull();
-        assertThat(chunkRepository.countByConteudoId(id)).isZero();
-        assertThat(conteudoRepository.findById(id).orElseThrow().isPublicado()).isTrue();
     }
 
     private String textoIndexado(UUID id) {

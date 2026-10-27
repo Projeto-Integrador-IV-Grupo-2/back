@@ -1,6 +1,7 @@
 package com.nexo.service.assistente;
 
 import com.nexo.config.IaProperties;
+import com.nexo.dto.assistente.FonteAssistenteResponse;
 import com.nexo.dto.assistente.MensagemResponse;
 import com.nexo.dto.assistente.RespostaAssistenteResponse;
 import com.nexo.dto.assistente.SessaoResponse;
@@ -10,9 +11,9 @@ import com.nexo.entity.FonteMensagem;
 import com.nexo.event.PerguntaRespondidaEvent;
 import com.nexo.exception.LimiteDePerguntasExcedidoException;
 import com.nexo.ia.ClienteIa;
+import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.indexacao.BuscaDeTrechosService;
 import com.nexo.service.indexacao.TrechoEncontrado;
-import com.nexo.security.UsuarioAutenticado;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -44,14 +45,13 @@ public class ConsultaAssistenteService {
             "Não encontrei essa informação nos documentos da empresa. "
                     + "Tente reformular a pergunta ou procure a área responsável pelo assunto.";
 
-    private static final long JANELA_SEGUNDOS = 60;
-
     private final ChatSessaoService chatSessaoService;
     private final BuscaDeTrechosService buscaDeTrechosService;
     private final MontadorDePromptFactory montadorDePromptFactory;
     private final ClienteIa clienteIa;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
+    private final LimitePerguntasService limitePerguntasService;
     private final int trechos;
     private final int perguntasPorMinuto;
     private final int mensagensHistorico;
@@ -62,13 +62,15 @@ public class ConsultaAssistenteService {
                                      ClienteIa clienteIa,
                                      ApplicationEventPublisher publisher,
                                      Clock clock,
-                                     IaProperties properties) {
+                                     IaProperties properties,
+                                     LimitePerguntasService limitePerguntasService) {
         this.chatSessaoService = chatSessaoService;
         this.buscaDeTrechosService = buscaDeTrechosService;
         this.montadorDePromptFactory = montadorDePromptFactory;
         this.clienteIa = clienteIa;
         this.publisher = publisher;
         this.clock = clock;
+        this.limitePerguntasService = limitePerguntasService;
         this.trechos = properties.busca().trechos();
         this.perguntasPorMinuto = properties.consulta().perguntasPorMinuto();
         this.mensagensHistorico = properties.consulta().mensagensHistorico();
@@ -78,7 +80,7 @@ public class ConsultaAssistenteService {
         ChatSessao sessao = chatSessaoService.buscarDoUsuario(sessaoId, usuario);
         MontadorDePrompt montador = montadorDePromptFactory.para(sessao.getContexto());
         OffsetDateTime agora = OffsetDateTime.now(clock);
-        exigirDentroDoLimite(usuario.getId(), agora);
+        limitePerguntasService.reservar(usuario.getTenantId(), usuario.getId(), perguntasPorMinuto);
 
         String texto = pergunta.strip();
         List<TrechoEncontrado> encontrados = buscaDeTrechosService.buscar(usuario.getTenantId(), texto, trechos);
@@ -93,22 +95,22 @@ public class ConsultaAssistenteService {
         }
 
         List<FonteMensagem> fontes = encontrados.stream()
-                .map(trecho -> new FonteMensagem(trecho.conteudoId(), trecho.titulo(), trecho.chunkId(), trecho.ordem()))
+                .map(trecho -> new FonteMensagem(trecho.conteudoId(), trecho.titulo(), trecho.chunkId(),
+                        trecho.ordem(), trecho.texto()))
                 .toList();
         TrocaRegistrada troca = chatSessaoService.registrarTroca(sessao, texto, agora, resposta, fontes);
         MensagemResponse daResposta = MensagemResponse.de(troca.resposta());
+        List<FonteAssistenteResponse> fontesDetalhadas = troca.resposta().getFontes().stream()
+                .map(FonteAssistenteResponse::de)
+                .toList();
+        long documentosCitados = fontes.stream()
+                .map(FonteMensagem::conteudoId)
+                .distinct()
+                .count();
 
         publisher.publishEvent(new PerguntaRespondidaEvent(usuario.getTenantId(), usuario.getId(), sessaoId,
-                troca.resposta().getId(), !daResposta.fontes().isEmpty(), daResposta.fontes().size()));
+                troca.resposta().getId(), documentosCitados > 0, Math.toIntExact(documentosCitados)));
         return new RespostaAssistenteResponse(SessaoResponse.de(troca.sessao()),
-                MensagemResponse.de(troca.pergunta()), daResposta);
-    }
-
-    private void exigirDentroDoLimite(UUID usuarioId, OffsetDateTime agora) {
-        long recentes = chatSessaoService.perguntasDoUsuarioDesde(usuarioId, agora.minusSeconds(JANELA_SEGUNDOS));
-        if (recentes >= perguntasPorMinuto) {
-            throw new LimiteDePerguntasExcedidoException(
-                    "Você fez muitas perguntas em pouco tempo. Aguarde um minuto e tente de novo.", JANELA_SEGUNDOS);
-        }
+                MensagemResponse.de(troca.pergunta()), daResposta, fontesDetalhadas);
     }
 }

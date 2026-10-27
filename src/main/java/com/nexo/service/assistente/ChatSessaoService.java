@@ -6,7 +6,6 @@ import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
 import com.nexo.entity.ContextoChat;
 import com.nexo.entity.FonteMensagem;
-import com.nexo.entity.PapelMensagem;
 import com.nexo.event.MensagemRegistradaEvent;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.ChatMensagemRepository;
@@ -115,11 +114,6 @@ public class ChatSessaoService {
                 mensagemRepository.findBySessaoIdOrderByCriadoEmDesc(sessaoId, PageRequest.of(0, limite)));
         Collections.reverse(recentes);
         return recentes;
-    }
-
-    @Transactional(readOnly = true)
-    public long perguntasDoUsuarioDesde(UUID usuarioId, OffsetDateTime desde) {
-        return mensagemRepository.contarDoUsuarioDesde(usuarioId, PapelMensagem.USUARIO, desde);
     }
 
     /**

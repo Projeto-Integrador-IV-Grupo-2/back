@@ -7,11 +7,13 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.nexo.config.IaProperties;
+import com.nexo.dto.assistente.FonteAssistenteResponse;
 import com.nexo.dto.assistente.RespostaAssistenteResponse;
 import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
@@ -60,6 +62,9 @@ class ConsultaAssistenteServiceTest {
     @Mock
     private ApplicationEventPublisher publisher;
 
+    @Mock
+    private LimitePerguntasService limitePerguntasService;
+
     private ConsultaAssistenteService service;
     private UsuarioAutenticado usuario;
     private ChatSessao sessao;
@@ -70,7 +75,7 @@ class ConsultaAssistenteServiceTest {
                 new IaProperties.Busca(5, 0.6), new IaProperties.Consulta(3, 6), null);
         service = new ConsultaAssistenteService(chatSessaoService, buscaDeTrechosService,
                 new MontadorDePromptFactory(List.of(new MontadorDePromptConhecimento())), clienteIa, publisher,
-                Clock.fixed(AGORA, ZoneOffset.UTC), properties);
+                Clock.fixed(AGORA, ZoneOffset.UTC), properties, limitePerguntasService);
         usuario = new UsuarioAutenticado(UUID.randomUUID(), UUID.randomUUID(), "Pessoa", "p@nexo.com", "{bcrypt}x",
                 Perfil.COLABORADOR, true);
         sessao = ChatSessao.nova(usuario.getTenantId(), usuario.getId(), ContextoChat.CONHECIMENTO, null,
@@ -82,10 +87,12 @@ class ConsultaAssistenteServiceTest {
     void respondeComOsTrechosEDevolveDocumentosSemRepetir() {
         UUID ferias = UUID.randomUUID();
         UUID beneficios = UUID.randomUUID();
+        UUID outraPoliticaComMesmoTitulo = UUID.randomUUID();
         List<TrechoEncontrado> trechos = List.of(
                 new TrechoEncontrado(UUID.randomUUID(), ferias, "Férias", 1, "a", 0.1),
                 new TrechoEncontrado(UUID.randomUUID(), beneficios, "Benefícios", 2, "b", 0.2),
-                new TrechoEncontrado(UUID.randomUUID(), ferias, "Férias", 3, "c", 0.3));
+                new TrechoEncontrado(UUID.randomUUID(), ferias, "Férias", 3, "c", 0.3),
+                new TrechoEncontrado(UUID.randomUUID(), outraPoliticaComMesmoTitulo, "Férias", 4, "d", 0.4));
         dadoSessaoDentroDoLimite();
         when(buscaDeTrechosService.buscar(usuario.getTenantId(), "Quantos dias?", 5)).thenReturn(trechos);
         when(clienteIa.gerarResposta(anyString(), anyList())).thenReturn(new RespostaIa("Trinta dias.", 1, 1));
@@ -96,12 +103,19 @@ class ConsultaAssistenteServiceTest {
         assertThat(resposta.resposta().conteudo()).isEqualTo("Trinta dias.");
         assertThat(resposta.pergunta().conteudo()).isEqualTo("Quantos dias?");
         assertThat(resposta.resposta().fontes()).containsExactly("Férias", "Benefícios");
+        assertThat(resposta.fontes()).hasSize(4)
+                .extracting(FonteAssistenteResponse::documentoId)
+                .containsExactly(ferias, beneficios, ferias, outraPoliticaComMesmoTitulo);
+        assertThat(resposta.fontes().get(0).trecho()).isEqualTo("a");
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<FonteMensagem>> fontes = ArgumentCaptor.forClass(List.class);
         verify(chatSessaoService).registrarTroca(eq(sessao), eq("Quantos dias?"), any(), eq("Trinta dias."),
                 fontes.capture());
-        assertThat(fontes.getValue()).hasSize(3);
-        verify(publisher).publishEvent(any(PerguntaRespondidaEvent.class));
+        assertThat(fontes.getValue()).hasSize(4);
+        ArgumentCaptor<PerguntaRespondidaEvent> evento = ArgumentCaptor.forClass(PerguntaRespondidaEvent.class);
+        verify(publisher).publishEvent(evento.capture());
+        assertThat(evento.getValue().encontrouFontes()).isTrue();
+        assertThat(evento.getValue().quantidadeFontes()).isEqualTo(3);
     }
 
     @Test
@@ -136,8 +150,8 @@ class ConsultaAssistenteServiceTest {
     @Test
     void acimaDoLimitePorMinutoResponde429SemBuscar() {
         when(chatSessaoService.buscarDoUsuario(sessao.getId(), usuario)).thenReturn(sessao);
-        when(chatSessaoService.perguntasDoUsuarioDesde(usuario.getId(),
-                OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC).minusSeconds(60))).thenReturn(3L);
+        doThrow(new LimiteDePerguntasExcedidoException("Limite excedido", 60))
+                .when(limitePerguntasService).reservar(eq(usuario.getTenantId()), eq(usuario.getId()), eq(3));
 
         assertThatThrownBy(() -> service.perguntar(sessao.getId(), "Pergunta", usuario))
                 .isInstanceOf(LimiteDePerguntasExcedidoException.class);
@@ -166,7 +180,6 @@ class ConsultaAssistenteServiceTest {
 
     private void dadoSessaoDentroDoLimite() {
         when(chatSessaoService.buscarDoUsuario(sessao.getId(), usuario)).thenReturn(sessao);
-        when(chatSessaoService.perguntasDoUsuarioDesde(eq(usuario.getId()), any())).thenReturn(0L);
     }
 
     /** Devolve a troca montada com os próprios argumentos, como o service real faria. */

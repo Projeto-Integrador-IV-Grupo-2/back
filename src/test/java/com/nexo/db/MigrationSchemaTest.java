@@ -151,6 +151,29 @@ class MigrationSchemaTest {
     }
 
     @Test
+    void limiteDePerguntasTemMutexIndiceEEscopoPorTenant() {
+        List<String> tabelas = jdbc.queryForList(
+                "SELECT table_name FROM information_schema.tables "
+                        + "WHERE table_schema = current_schema() AND table_name IN "
+                        + "('assistente_limite_usuario', 'assistente_consulta_limite')",
+                String.class);
+        assertThat(tabelas).containsExactlyInAnyOrder("assistente_limite_usuario", "assistente_consulta_limite");
+
+        List<String> indices = jdbc.queryForList(
+                "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() "
+                        + "AND tablename IN ('assistente_limite_usuario', 'assistente_consulta_limite')",
+                String.class);
+        assertThat(indices).contains("pk_assistente_limite_usuario", "idx_assistente_consulta_limite_usuario_tempo");
+
+        List<String> constraints = jdbc.queryForList(
+                "SELECT conname FROM pg_constraint WHERE conrelid IN "
+                        + "('assistente_limite_usuario'::regclass, 'assistente_consulta_limite'::regclass)",
+                String.class);
+        assertThat(constraints).contains("fk_assistente_limite_usuario_usuario",
+                "fk_assistente_consulta_limite_usuario");
+    }
+
+    @Test
     void historicoTemDetalhesJsonbEChaveCompostaDeTenant() {
         String tipoDetalhes = jdbc.queryForObject(
                 "SELECT data_type FROM information_schema.columns "

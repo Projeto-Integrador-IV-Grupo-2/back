@@ -485,9 +485,8 @@ com o seu embedding:
 2. O `IndexadorDeConteudoListener` escuta esses eventos **depois do commit** e
    **fora da requisição** (`@TransactionalEventListener` + `@Async`). O cadastro
    de conteúdos não conhece a indexação.
-3. O `IndexacaoService` junta o texto das `FonteDeTextoDoConteudo`, nesta
-   ordem: `CamposDoConteudo` (título, descrição e corpo) e `ArquivosDoConteudo`
-   (texto dos arquivos anexados, na ordem de envio).
+3. O `IndexacaoService` junta o texto das `FonteDeTextoDoConteudo`. Hoje a
+   única fonte é `CamposDoConteudo`, com título, descrição e corpo.
 4. O `DivisorDeTexto` corta o texto em trechos de até `IA_TAMANHO_TRECHO`
    caracteres, com `IA_SOBREPOSICAO_TRECHO` de sobreposição. O corte cai, de
    preferência, em fim de parágrafo ou de frase.
@@ -504,20 +503,13 @@ e último erro. A `RotinaDeReindexacao` tenta de novo a cada minuto, com espera
 que dobra a cada falha, até `IA_INDEXACAO_MAX_TENTATIVAS`.
 
 **Extração de arquivos:** a `ExtratorDeTextoFactory` entrega o extrator pelo
-tipo MIME: PDF (PDFBox), DOCX (Apache POI), TXT e MD (UTF-8). A
-`ArquivosDoConteudo` lê cada arquivo do armazenamento e pede o extrator à
-factory. Um formato novo é só mais um `ExtratorDeTexto` (`@Component`).
+tipo MIME: PDF (PDFBox), DOCX (Apache POI), TXT e MD (UTF-8). Quando a issue #55
+criar a tabela `arquivo`, falta só uma `FonteDeTextoDoConteudo` que leia os
+arquivos do armazenamento e use a factory.
 
 **Busca:** o `BuscaDeTrechosService` compara o embedding da pergunta com os
 trechos usando a distância de cosseno do pgvector (`<=>`). Trechos mais
 distantes que `IA_BUSCA_DISTANCIA_MAXIMA` são descartados.
-
-**Testes:** `DivisorDeTextoTest` (tamanho, sobreposição e ordem),
-`BuscaDeTrechosServiceTest` (busca com o `ClienteIaFake`),
-`ExtratorDeTextoFactoryTest`, `ArquivosDoConteudoTest` e
-`IndexacaoServiceTest` (falha registrada e nova tentativa), além dos testes de
-integração `IndexacaoIntegrationTest` e `DocumentoIndexacaoIntegrationTest`
-(publicar, editar, despublicar, isolamento por tenant e arquivo ilegível).
 
 **Por que pgvector:** a similaridade roda no próprio PostgreSQL, com índice
 HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
@@ -531,7 +523,7 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 |---|---|---|
 | `POST /api/assistente/sessoes` | autenticado | Cria uma conversa. Corpo opcional `{"titulo": "...", "contexto": "CONHECIMENTO"}` — a tela manda o começo da primeira pergunta como título; sem ele, o título nasce da primeira troca |
 | `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga. A ordem é fixa: `sort` na query é ignorado |
-| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"conteudo": "..."}` com até 2000 caracteres (`pergunta` segue aceito como apelido). Devolve a troca inteira: `sessao`, `pergunta` e `resposta` |
+| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"conteudo": "..."}` com até 2000 caracteres (`pergunta` segue aceito como apelido). Devolve a troca (`sessao`, `pergunta`, `resposta`) e `fontes` detalhadas com documento e trecho |
 | `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `id`, `papel`, `conteudo`, `fontes` e `criadoEm` |
 | `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 200 caracteres — renomeia a conversa |
 | `DELETE /api/assistente/sessoes/{id}` | autenticado | **204**. Apaga a conversa e, junto, todas as mensagens dela |
@@ -546,13 +538,30 @@ Formato de uma conversa e de uma mensagem:
   "fontes": ["Política de férias"], "criadoEm": "2026-10-25T12:03:00Z" }
 ```
 
-> **Os nomes do JSON não são os das colunas.** `criadoEm` e `atualizadoEm`
-> saem de `iniciado_em` e `ultima_interacao`, e `fontes` é uma lista de
-> títulos em vez de objetos. Foi uma decisão do grupo: a tela do histórico
-> (front #55) já estava escrita contra esse contrato, e adaptar a API saiu
-> mais barato do que refazer a tela. O banco continua igual ao DER; só a
-> borda muda. `titulo` nunca volta nulo — enquanto a conversa não tem nome
-> próprio, vale `"Nova conversa"`.
+> **Compatibilidade do JSON:** `criadoEm` e `atualizadoEm` saem de
+> `iniciado_em` e `ultima_interacao`. A lista `resposta.fontes` e as fontes do
+> histórico continuam como títulos para clientes existentes. Adicionalmente,
+> o endpoint de pergunta retorna uma lista de topo `fontes` com objetos
+> `{documentoId, titulo, trechoId, ordem, trecho}`. Assim, a tela pode abrir o
+> documento pelo ID e exibir o trecho citado sem perder compatibilidade. O
+> banco guarda esse snapshot das fontes no JSONB de `chat_mensagem.fontes`. A
+> lista detalhada contém um item por trecho recuperado; um documento pode aparecer
+> mais de uma vez quando contribui com trechos diferentes. `titulo` nunca volta
+> nulo — enquanto a conversa não tem nome próprio, vale `"Nova conversa"`.
+
+Exemplo da lista detalhada no retorno do endpoint:
+
+```json
+"fontes": [
+  {
+    "documentoId": "uuid-do-documento",
+    "titulo": "Política de férias",
+    "trechoId": "uuid-do-trecho",
+    "ordem": 1,
+    "trecho": "Cada colaborador tem trinta dias de férias por ano."
+  }
+]
+```
 
 **Cada um só enxerga as próprias conversas — inclusive o admin.** Sessão de
 outra pessoa ou de outro tenant responde **404** em todas as rotas acima, como
@@ -571,9 +580,15 @@ O fluxo de uma pergunta é este:
 
 1. A sessão precisa ser do próprio usuário. A de outra pessoa, inclusive para o
    admin, responde **404**.
-2. Cada usuário faz até `IA_PERGUNTAS_POR_MINUTO` perguntas por minuto. A
-   contagem vem de `chat_mensagem`, então vale mesmo com várias instâncias da
-   API. Acima do limite, a resposta é **429** com `Retry-After: 60`.
+2. Cada usuário faz até `IA_PERGUNTAS_POR_MINUTO` tentativas por janela móvel
+   de 60 segundos. As reservas ficam em `assistente_consulta_limite`, sem guardar
+   o texto da pergunta ou resposta, e `assistente_limite_usuario` serializa a
+   reserva por usuário/tenant no PostgreSQL. Isso evita ultrapassar o limite
+   com chamadas concorrentes em instâncias diferentes. O instante é obtido por
+   `clock_timestamp()` após o bloqueio, usando o relógio compartilhado do banco
+   e evitando divergência entre instâncias. Falhas do provedor também consomem
+   a reserva. Acima do limite, a resposta é **429** com `Retry-After`
+   calculado até a primeira reserva expirar.
 3. A API busca os trechos mais parecidos do tenant, só de documentos publicados.
 4. **Sem nenhum trecho relevante**, a resposta é fixa ("Não encontrei essa
    informação nos documentos da empresa…"), sem fontes e **sem chamar o
@@ -584,8 +599,9 @@ O fluxo de uma pergunta é este:
    texto dos documentos é **dado, nunca instrução**, e marcações
    `<documento>` vindas do próprio texto são neutralizadas.
 6. A pergunta e a resposta são gravadas **juntas** em `chat_mensagem`, com os
-   trechos usados em `fontes` (JSON). Se o provedor cair, a resposta é **503** e
-   nada fica gravado pela metade.
+   trechos usados em `fontes` (JSONB: ID/título do documento, ID/ordem do trecho
+   e o texto citado). Se o provedor cair, a resposta é **503** e nada fica
+   gravado pela metade.
 7. A gravação publica `MensagemRegistradaEvent`. O `SessaoDoChatListener`
    escuta e é quem atualiza `ultima_interacao` e dá título à conversa a partir
    do começo da primeira pergunta — o service que grava a mensagem não mexe na
