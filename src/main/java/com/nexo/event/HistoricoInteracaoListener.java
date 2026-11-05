@@ -53,6 +53,12 @@ public class HistoricoInteracaoListener {
         tentarRegistrar("ASSISTENTE_CONSULTADO", evento.sessaoId(), () -> historicoService.registrar(evento));
     }
 
+    /** Senha redefinida pelo link do e-mail (issue #76). */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void aoRedefinirSenha(SenhaRedefinidaEvent evento) {
+        tentarRegistrar("SENHA_REDEFINIDA", evento.usuarioId(), () -> historicoService.registrar(evento));
+    }
+
     private void tentarRegistrar(String tipo, java.util.UUID referencia, Runnable gravacao) {
         try {
             gravacao.run();

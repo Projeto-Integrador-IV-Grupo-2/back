@@ -6,6 +6,7 @@ import com.nexo.entity.Tenant;
 import com.nexo.entity.TipoInteracaoHistorico;
 import com.nexo.entity.Usuario;
 import com.nexo.event.PerguntaRespondidaEvent;
+import com.nexo.event.SenhaRedefinidaEvent;
 import com.nexo.event.TrilhaAcessadaEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.event.TrilhaIniciadaEvent;
@@ -68,6 +69,19 @@ public class HistoricoInteracaoFactory {
                 "encontrouFontes", evento.encontrouFontes(),
                 "quantidadeFontes", evento.quantidadeFontes(),
                 "origem", "POST /api/assistente/sessoes/{id}/mensagens"));
+        return historico;
+    }
+
+    /**
+     * Senha redefinida pelo link do e-mail (issue #76). Os detalhes guardam só
+     * a origem — nunca o token nem a senha.
+     */
+    public HistoricoInteracao para(SenhaRedefinidaEvent evento) {
+        HistoricoInteracao historico = new HistoricoInteracao();
+        historico.setTenant(tenantRepository.getReferenceById(evento.tenantId()));
+        historico.setUsuario(usuarioRepository.getReferenceById(evento.usuarioId()));
+        historico.setTipo(TipoInteracaoHistorico.SENHA_REDEFINIDA);
+        historico.setDetalhes(Map.of("origem", "POST /api/auth/redefinir-senha"));
         return historico;
     }
 

@@ -4,6 +4,7 @@ import com.nexo.dto.HistoricoInteracaoResponse;
 import com.nexo.entity.HistoricoInteracao;
 import com.nexo.entity.Perfil;
 import com.nexo.event.PerguntaRespondidaEvent;
+import com.nexo.event.SenhaRedefinidaEvent;
 import com.nexo.event.TrilhaAcessadaEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.event.TrilhaIniciadaEvent;
@@ -58,6 +59,11 @@ public class HistoricoInteracaoService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void registrar(PerguntaRespondidaEvent evento) {
+        persistir(factory.para(evento));
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registrar(SenhaRedefinidaEvent evento) {
         persistir(factory.para(evento));
     }
 
