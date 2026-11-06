@@ -697,7 +697,55 @@ Regras que valem a pena conhecer:
 - **Ação `TRILHA`** atribui a trilha ao colaborador com o prazo da ação
   (`NAO_INICIADA`), sem duplicar se ele já tinha atribuição. Quando o colaborador
   conclui a trilha, a ação é concluída sozinha (`TrilhaConcluidaEvent`).
+  Atribuir pela ação também avisa o colaborador (`TrilhaAtribuidaEvent`), igual
+  à atribuição feita pela tela de trilhas.
 - **Percentual do PDI** = ações concluídas / total de ações (0% sem ações).
+
+---
+
+## Notificações
+
+Avisos in-app para o sino do front (tabela `notificacao`, V25). Toda rota é do
+**usuário logado**: nenhuma aceita o id de outra pessoa, e notificação alheia
+ou de outro tenant responde **404**.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/notificacoes` | autenticado | Lista paginada, mais recentes primeiro (ordem fixa); `?naoLidas=true` filtra; página de no máximo 50 |
+| `GET /api/notificacoes/nao-lidas/total` | autenticado | `{ "total": n }` — o número do sino |
+| `PATCH /api/notificacoes/{id}/lida` | autenticado | Marca como lida e devolve a notificação; marcar de novo não muda nada |
+| `PATCH /api/notificacoes/lidas` | autenticado | Marca todas as não lidas como lidas (**204**) |
+
+Cada notificação traz `id`, `tipo`, `titulo`, `mensagem`, `link` (rota do front
+para onde o clique leva), `lida`, `lidaEm` e `criadaEm`.
+
+| Tipo | Quando | Quem recebe | Link |
+|---|---|---|---|
+| `TRILHA_ATRIBUIDA` | Trilha atribuída (tela de trilhas ou ação de PDI) | O colaborador, com o prazo | `/trilhas/{id}` |
+| `PRAZO_PROXIMO` | Rotina diária (7h): prazo nos próximos `NOTIFICACAO_DIAS_PRAZO` dias | Quem ainda não concluiu | `/trilhas/{id}` |
+| `PRAZO_VENCIDO` | Rotina de atraso (3h) marca a atribuição como `ATRASADA` | O colaborador | `/trilhas/{id}` |
+| `TRILHA_CONCLUIDA` | Colaborador conclui a trilha | Gestores ativos da **área** do colaborador (ninguém se ele não tem área) | `/acompanhamento` |
+| `CONTEUDO_PUBLICADO` | Conteúdo publicado | Colaboradores ativos da área do conteúdo; **todos** os colaboradores se ele não tem área; nunca quem publicou | `/conhecimento/{id}` (documento) ou `/conteudos` |
+| `TRILHA_INATIVADA` | Trilha inativada | Só quem ainda **não concluiu** | `/trilhas` |
+
+Como funciona:
+
+- **Observer:** os serviços de trilha, atribuição e conteúdo só publicam os
+  eventos que já existiam; o `NotificacoesListener` escuta **depois do commit**
+  (`@TransactionalEventListener` + `@Async`). Se a operação principal falhar,
+  ninguém é avisado; se a notificação falhar, o erro vai para o log e a
+  operação principal não é afetada.
+- **Factory Method:** os textos e links de cada tipo ficam na
+  `NotificacaoFactory`; quem gera (`GeradorDeNotificacoes`) só decide quem recebe.
+- **Sem duplicar:** `PRAZO_PROXIMO` e `PRAZO_VENCIDO` saem uma vez por
+  atribuição — o gerador confere antes e o índice único parcial
+  `uq_notificacao_aviso_de_prazo` garante no banco. Rodar a rotina duas vezes
+  não repete o aviso.
+- **Usuário inativo** não recebe notificação.
+- **Limpeza:** a rotina das 7h apaga as notificações **lidas** há mais de
+  `NOTIFICACAO_RETENCAO_LIDAS` (90 dias). Não lidas nunca são apagadas.
+- Apagar o usuário apaga as notificações dele (chave estrangeira composta por
+  tenant, com `ON DELETE CASCADE`).
 
 ---
 
@@ -790,6 +838,8 @@ define-se a variável e ela prevalece.
 | `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
 | `IA_PERGUNTAS_POR_MINUTO` | `10` | Perguntas ao assistente aceitas por usuário a cada minuto |
 | `IA_MENSAGENS_HISTORICO` | `6` | Mensagens anteriores da sessão que entram no prompt |
+| `NOTIFICACAO_DIAS_PRAZO` | `3` | Com quantos dias de antecedência a rotina avisa o prazo da trilha |
+| `NOTIFICACAO_RETENCAO_LIDAS` | `P90D` | Por quanto tempo uma notificação lida fica guardada antes da limpeza |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
@@ -868,6 +918,7 @@ do PR. O workflow **não usa segredos**.
 | V19 | `V19__create_conteudo_chunk_e_indexacao.sql` | Extensão `vector`, tabela `conteudo_chunk` (embedding `vector(768)` + índice HNSW), enum `status_indexacao` e tabela `indexacao_conteudo` |
 | V20 | `V20__create_chat_sessao_e_mensagem.sql` | Enums `contexto_chat`/`papel_mensagem` e tabelas `chat_sessao` e `chat_mensagem` (com `fontes` em JSONB; apagar a sessão apaga as mensagens) |
 | V21 | `V21__create_arquivo_e_tipo_documento.sql` | Tipo `DOCUMENTO` em `tipo_conteudo`, enum `tipo_arquivo`, tabela `arquivo` e índices tenant + categoria e tenant + área em `conteudo` |
+| V25 | `V25__create_notificacao.sql` | Tabela `notificacao` (tipo com CHECK, chave composta por tenant com `ON DELETE CASCADE`), índices da lista e das não lidas e índice único parcial que impede aviso de prazo repetido |
 
 **Atenção ao atualizar um banco que já contém dados:** as migrations V14 e V15
 validam as relações entre tenants e as duplicidades de e-mail/subdomínio sem
