@@ -36,6 +36,10 @@ public interface TrilhaAtribuicaoRepository
             UUID trilhaId, UUID tenantId, StatusAtribuicao status);
 
     /** Atribuições vencidas ainda não processadas pela rotina diária de atraso. */
+    /** Atribuições com prazo entre as datas e nos status informados — o aviso de prazo próximo (issue #78). */
+    List<TrilhaAtribuicao> findByPrazoBetweenAndStatusIn(LocalDate inicio, LocalDate fim,
+                                                        Collection<StatusAtribuicao> status);
+
     List<TrilhaAtribuicao> findByPrazoBeforeAndStatusNotIn(
             LocalDate prazo, Collection<StatusAtribuicao> status);
 
