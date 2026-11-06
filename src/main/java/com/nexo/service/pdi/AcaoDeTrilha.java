@@ -9,6 +9,7 @@ import com.nexo.entity.TipoAcaoPdi;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
+import com.nexo.event.TrilhaAtribuidaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.TrilhaAtribuicaoRepository;
@@ -17,7 +18,9 @@ import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,13 +39,16 @@ public class AcaoDeTrilha implements CriadorDeAcao {
     private final TrilhaRepository trilhaRepository;
     private final TrilhaAtribuicaoRepository trilhaAtribuicaoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final ApplicationEventPublisher publisher;
 
     public AcaoDeTrilha(TrilhaRepository trilhaRepository,
                         TrilhaAtribuicaoRepository trilhaAtribuicaoRepository,
-                        UsuarioRepository usuarioRepository) {
+                        UsuarioRepository usuarioRepository,
+                        ApplicationEventPublisher publisher) {
         this.trilhaRepository = trilhaRepository;
         this.trilhaAtribuicaoRepository = trilhaAtribuicaoRepository;
         this.usuarioRepository = usuarioRepository;
+        this.publisher = publisher;
     }
 
     @Override
@@ -79,7 +85,12 @@ public class AcaoDeTrilha implements CriadorDeAcao {
         atribuicao.setPrazo(request.prazo());
         // Atribuída pelo gestor: o colaborador ainda não começou.
         atribuicao.setStatus(StatusAtribuicao.NAO_INICIADA);
-        return trilhaAtribuicaoRepository.saveAndFlush(atribuicao);
+        TrilhaAtribuicao gravada = trilhaAtribuicaoRepository.saveAndFlush(atribuicao);
+        // Atribuir pelo PDI também é atribuir: quem escuta (ex.: notificações)
+        // trata igual à atribuição pela tela de trilhas.
+        publisher.publishEvent(new TrilhaAtribuidaEvent(
+                trilha.getId(), trilha.getTenant().getId(), List.of(colaborador.getId()), requisitante.getId()));
+        return gravada;
     }
 
     private Trilha buscarTrilhaAtivaNoTenant(PdiAcaoRequest request, UsuarioAutenticado requisitante) {

@@ -88,7 +88,8 @@ class PdiAcaoServiceTest {
     @BeforeEach
     void setUp() {
         AcaoPdiFactory factory = new AcaoPdiFactory(List.of(
-                new AcaoDeTrilha(trilhaRepository, trilhaAtribuicaoRepository, usuarioRepository),
+                new AcaoDeTrilha(trilhaRepository, trilhaAtribuicaoRepository, usuarioRepository,
+                        org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class)),
                 new AcaoDescritiva()));
         pdiAcaoService = new PdiAcaoService(pdiService, pdiItemRepository, pdiAcaoRepository,
                 trilhaAtribuicaoRepository, factory);
