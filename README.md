@@ -166,6 +166,25 @@ o token e o envia em toda requisição no cabeçalho
 | `GET /api/auth/me` | autenticado | Devolve o usuário dono do token |
 | `POST /api/auth/esqueci-senha` | público | Recebe `{ "email", "tenantSubdominio?" }` e manda o link de redefinição. Sempre **204** |
 | `POST /api/auth/redefinir-senha` | público | Recebe `{ "token", "novaSenha" }` e troca a senha. **204**; link inválido ou expirado, **400** |
+=======
+| `GET /api/auth/me` | autenticado | Devolve o usuário dono do token, com `area` (ou `null`) e `empresa` |
+| `PUT /api/auth/me` | autenticado | O próprio usuário muda o nome (`{ "nomeCompleto" }`) e recebe o perfil atualizado |
+| `PATCH /api/auth/me/senha` | autenticado | Troca a própria senha (`{ "senhaAtual", "novaSenha" }`); **204** |
+
+**Perfil do próprio usuário:** as rotas `/me` agem sempre sobre o dono do
+token, então ninguém altera o perfil de outra pessoa. E-mail, papel e área
+continuam com o ADMIN (`PUT /api/usuarios/{id}`). Como o filtro do JWT recarrega
+o usuário do banco a cada requisição, o nome novo já aparece no próximo
+`GET /me`, sem token novo. Na troca de senha:
+
+- a nova senha segue o `@SenhaForte` (8+ caracteres, com maiúscula, minúscula e
+  número) e precisa ser diferente da atual;
+- **senha atual errada responde 400** com `fieldErrors[].field = "senhaAtual"`,
+  nunca 401, porque o front trata 401 como sessão vencida e desloga;
+- o token em uso continua valendo até expirar (a API não guarda sessão).
+
+O login devolve o mesmo formato do `GET /me` em `usuario`, já com `area` e
+`empresa`: o front usa a área nas recomendações de trilha.
 
 Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
 `POST /api/auth/esqueci-senha`, `POST /api/auth/redefinir-senha`, `/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As

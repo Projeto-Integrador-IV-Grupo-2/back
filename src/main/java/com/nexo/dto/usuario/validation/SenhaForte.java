@@ -12,9 +12,9 @@ import java.lang.annotation.Target;
  * Política mínima de senha: 8+ caracteres, com ao menos uma letra maiúscula,
  * uma minúscula e um número.
  *
- * <p>Aplicada apenas no cadastro ({@code CriarUsuarioRequest.senha}) — troca
- * de senha de um usuário existente é um fluxo à parte, fora do escopo deste
- * card, e pode reutilizar esta mesma anotação quando for implementado.</p>
+ * <p>Aplicada no cadastro ({@code CriarUsuarioRequest.senha}) e na troca de
+ * senha pelo próprio usuário ({@code TrocarSenhaRequest.novaSenha}). O front
+ * repete a mesma regra em {@code src/utils/senha.ts} só para avisar antes.</p>
  */
 @Documented
 @Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.RECORD_COMPONENT})
