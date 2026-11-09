@@ -9,7 +9,6 @@ import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
 import com.nexo.entity.FonteMensagem;
 import com.nexo.event.PerguntaRespondidaEvent;
-import com.nexo.exception.LimiteDePerguntasExcedidoException;
 import com.nexo.ia.ClienteIa;
 import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.indexacao.BuscaDeTrechosService;
