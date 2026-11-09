@@ -1,6 +1,7 @@
 package com.nexo.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -33,6 +34,7 @@ import com.nexo.repository.TenantRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.service.assistente.ConsultaAssistenteService;
 import com.nexo.service.indexacao.IndexacaoService;
+import jakarta.persistence.EntityManager;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +48,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -91,6 +94,12 @@ class AssistenteControllerTest {
     @Autowired
     private ChatMensagemRepository chatMensagemRepository;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private EntityManager entityManager;
+
     @MockitoSpyBean
     private ClienteIa clienteIa;
 
@@ -132,13 +141,24 @@ class AssistenteControllerTest {
                 .andExpect(jsonPath("$.resposta.papel").value("ASSISTENTE"))
                 .andExpect(jsonPath("$.resposta.conteudo", startsWith(ClienteIaFake.PREFIXO_RESPOSTA)))
                 .andExpect(jsonPath("$.resposta.fontes", hasSize(1)))
-                .andExpect(jsonPath("$.resposta.fontes[0]").value("Política de férias"));
+                .andExpect(jsonPath("$.resposta.fontes[0]").value("Política de férias"))
+                .andExpect(jsonPath("$.fontes", hasSize(1)))
+                .andExpect(jsonPath("$.fontes[0].documentoId").value(ferias.toString()))
+                .andExpect(jsonPath("$.fontes[0].titulo").value("Política de férias"))
+                .andExpect(jsonPath("$.fontes[0].trechoId").isNotEmpty())
+                .andExpect(jsonPath("$.fontes[0].trecho", containsString("Cada colaborador tem trinta dias de férias por ano.")));
 
+        // Força round-trip real do JSONB das fontes, sem depender do objeto ainda gerenciado.
+        entityManager.flush();
+        entityManager.clear();
         List<ChatMensagem> mensagens = chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId);
         assertThat(mensagens).extracting(ChatMensagem::getPapel)
                 .containsExactly(PapelMensagem.USUARIO, PapelMensagem.ASSISTENTE);
         assertThat(mensagens.get(1).getFontes()).isNotEmpty()
-                .allSatisfy(fonte -> assertThat(fonte.conteudoId()).isEqualTo(ferias));
+                .allSatisfy(fonte -> {
+                    assertThat(fonte.conteudoId()).isEqualTo(ferias);
+                    assertThat(fonte.trecho()).contains("Cada colaborador tem trinta dias de férias por ano.");
+                });
         ChatSessao sessao = chatSessaoRepository.findById(sessaoId).orElseThrow();
         assertThat(sessao.getTitulo()).isEqualTo("Quantos dias de férias o colaborador tem?");
     }
@@ -151,7 +171,8 @@ class AssistenteControllerTest {
         mockMvc.perform(pergunta(sessaoId, "Qual a senha do wifi da recepção?", tokenColaborador))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.resposta.conteudo").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
-                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)));
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)))
+                .andExpect(jsonPath("$.fontes", hasSize(0)));
     }
 
     @Test
@@ -164,7 +185,8 @@ class AssistenteControllerTest {
         mockMvc.perform(pergunta(sessaoId, "Quantos dias de férias o colaborador tem?", tokenColaborador))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.resposta.conteudo").value(ConsultaAssistenteService.RESPOSTA_NAO_ENCONTREI))
-                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)));
+                .andExpect(jsonPath("$.resposta.fontes", hasSize(0)))
+                .andExpect(jsonPath("$.fontes", hasSize(0)));
     }
 
     @Test
@@ -190,20 +212,31 @@ class AssistenteControllerTest {
                         "O assistente de IA está indisponível no momento. Tente novamente em instantes."));
 
         assertThat(chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId)).isEmpty();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM assistente_consulta_limite WHERE tenant_id = ? AND usuario_id = ?",
+                Long.class, tenant.getId(), colaborador.getId())).isEqualTo(1L);
     }
 
     @Test
-    void excessoDePerguntasResponde429() throws Exception {
+    void excessoDePerguntasResponde429MesmoEmOutraSessao() throws Exception {
+        UUID sessaoQueConsumiuQuota = criaSessao(tokenColaborador);
         UUID sessaoId = criaSessao(tokenColaborador);
+        assertThat(sessaoId).isNotEqualTo(sessaoQueConsumiuQuota);
         OffsetDateTime agora = OffsetDateTime.now();
+        jdbc.update("INSERT INTO assistente_limite_usuario (tenant_id, usuario_id) VALUES (?, ?) " +
+                        "ON CONFLICT (tenant_id, usuario_id) DO NOTHING", tenant.getId(), colaborador.getId());
         for (int i = 0; i < 10; i++) {
-            chatMensagemRepository.save(ChatMensagem.doUsuario(
-                    tenant.getId(), sessaoId, "pergunta " + i, agora.minusSeconds(i)));
+            jdbc.update("INSERT INTO assistente_consulta_limite (tenant_id, usuario_id, solicitada_em) " +
+                            "VALUES (?, ?, ?)", tenant.getId(), colaborador.getId(), agora);
         }
 
-        mockMvc.perform(pergunta(sessaoId, "Mais uma?", tokenColaborador))
+        var resposta = mockMvc.perform(pergunta(sessaoId, "Mais uma?", tokenColaborador))
                 .andExpect(status().isTooManyRequests())
-                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "60"));
+                .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
+                .andReturn();
+        long retryAfter = Long.parseLong(resposta.getResponse().getHeader(HttpHeaders.RETRY_AFTER));
+        // Pode ser menor que 60 se o tempo passar entre a reserva dos registros e a requisição.
+        assertThat(retryAfter).isBetween(1L, 60L);
     }
 
     @Test

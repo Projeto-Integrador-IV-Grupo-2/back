@@ -23,7 +23,7 @@ public record MensagemResponse(java.util.UUID id, PapelMensagem papel, String co
                 titulosDistintos(mensagem.getFontes()), mensagem.getCriadoEm());
     }
 
-    /** Vários trechos do mesmo documento viram uma fonte só. */
+    /** Mantém a lista histórica compatível, sem repetir títulos iguais. */
     static List<String> titulosDistintos(List<FonteMensagem> fontes) {
         if (fontes == null || fontes.isEmpty()) {
             return List.of();
