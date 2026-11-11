@@ -3,8 +3,10 @@ package com.nexo.service.notificacao;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -217,11 +219,34 @@ class GeradorDeNotificacoesTest {
                 .thenReturn(List.of(nova, jaAvisada, deInativo));
         when(notificacaoRepository.referenciasJaAvisadas(eq(TipoNotificacao.PRAZO_PROXIMO), anyCollection()))
                 .thenReturn(List.of(jaAvisada.getId()));
+        when(notificacaoRepository.inserirPrazoProximoSeAusente(
+                any(), any(), anyString(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(1);
 
         assertThat(gerador.avisarPrazosProximos()).isEqualTo(1);
-        Notificacao aviso = salva();
-        assertThat(aviso.getReferenciaId()).isEqualTo(nova.getId());
-        assertThat(aviso.getMensagem()).contains("vence em 2 dias");
+        ArgumentCaptor<String> mensagem = ArgumentCaptor.forClass(String.class);
+        verify(notificacaoRepository).inserirPrazoProximoSeAusente(
+                eq(tenant.getId()), eq(ana.getId()), eq(TipoNotificacao.PRAZO_PROXIMO.name()),
+                eq("Prazo chegando"), mensagem.capture(), eq("/trilhas/" + trilha.getId()), eq(nova.getId()));
+        assertThat(mensagem.getValue()).contains("vence em 2 dias");
+    }
+
+    @Test
+    void conflitoDeAvisoNaoImpedeAsDemaisAtribuicoes() {
+        Usuario ana = usuario(Perfil.COLABORADOR, true);
+        TrilhaAtribuicao primeira = atribuicao(ana, HOJE.plusDays(1), StatusAtribuicao.NAO_INICIADA);
+        TrilhaAtribuicao segunda = atribuicao(ana, HOJE.plusDays(2), StatusAtribuicao.EM_ANDAMENTO);
+        when(atribuicaoRepository.findByPrazoBetweenAndStatusIn(eq(HOJE), eq(HOJE.plusDays(3)), anyCollection()))
+                .thenReturn(List.of(primeira, segunda));
+        when(notificacaoRepository.referenciasJaAvisadas(eq(TipoNotificacao.PRAZO_PROXIMO), anyCollection()))
+                .thenReturn(List.of());
+        when(notificacaoRepository.inserirPrazoProximoSeAusente(
+                any(), any(), anyString(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(0, 1);
+
+        assertThat(gerador.avisarPrazosProximos()).isEqualTo(1);
+        verify(notificacaoRepository, times(2)).inserirPrazoProximoSeAusente(
+                any(), any(), anyString(), anyString(), anyString(), anyString(), any());
     }
 
     @Test

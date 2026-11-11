@@ -40,6 +40,23 @@ public interface NotificacaoRepository extends JpaRepository<Notificacao, UUID> 
     List<UUID> referenciasJaAvisadas(@Param("tipo") TipoNotificacao tipo,
                                      @Param("referencias") Collection<UUID> referencias);
 
+    /** Insere o aviso se outra instância ainda não o gravou para esta atribuição. */
+    @Modifying
+    @Query(value = """
+            INSERT INTO notificacao (tenant_id, usuario_id, tipo, titulo, mensagem, link, referencia_id)
+            VALUES (:tenantId, :usuarioId, :tipo, :titulo, :mensagem, :link, :referenciaId)
+            ON CONFLICT (usuario_id, tipo, referencia_id)
+            WHERE tipo IN ('PRAZO_PROXIMO', 'PRAZO_VENCIDO')
+            DO NOTHING
+            """, nativeQuery = true)
+    int inserirPrazoProximoSeAusente(@Param("tenantId") UUID tenantId,
+                                     @Param("usuarioId") UUID usuarioId,
+                                     @Param("tipo") String tipo,
+                                     @Param("titulo") String titulo,
+                                     @Param("mensagem") String mensagem,
+                                     @Param("link") String link,
+                                     @Param("referenciaId") UUID referenciaId);
+
     boolean existsByUsuarioIdAndTipoAndReferenciaId(UUID usuarioId, TipoNotificacao tipo, UUID referenciaId);
 
     /** Limpeza: notificações lidas antes do limite. */

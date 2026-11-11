@@ -182,8 +182,9 @@ public class GeradorDeNotificacoes {
      * PRAZO_PROXIMO para as atribuições em aberto que vencem entre hoje e
      * daqui a {@code diasAntesDoPrazo} dias, de trilha ativa e colaborador
      * ativo. Atribuição que já recebeu o aviso fica de fora: rodar de novo no
-     * mesmo dia não repete nada (e a UNIQUE do banco garante, mesmo com duas
-     * instâncias).
+     * mesmo dia não repete nada (e o índice único do banco garante, mesmo com
+     * duas instâncias). Se o prazo mudar depois do aviso, não é enviado outro
+     * aviso para a mesma atribuição.
      */
     @Transactional
     public int avisarPrazosProximos() {
@@ -202,8 +203,10 @@ public class GeradorDeNotificacoes {
             if (!jaAvisadas.contains(atribuicao.getId())
                     && atribuicao.getUsuario().isAtivo()
                     && atribuicao.getTrilha().isAtivo()) {
-                notificacaoRepository.save(factory.prazoProximo(atribuicao, hoje));
-                geradas++;
+                var aviso = factory.prazoProximo(atribuicao, hoje);
+                geradas += notificacaoRepository.inserirPrazoProximoSeAusente(
+                        aviso.getTenant().getId(), aviso.getUsuario().getId(), aviso.getTipo().name(),
+                        aviso.getTitulo(), aviso.getMensagem(), aviso.getLink(), aviso.getReferenciaId());
             }
         }
         return geradas;

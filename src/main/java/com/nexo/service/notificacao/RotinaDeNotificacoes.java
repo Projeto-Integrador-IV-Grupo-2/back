@@ -28,10 +28,22 @@ public class RotinaDeNotificacoes {
 
     @Scheduled(cron = "0 0 7 * * *", zone = ClockConfig.FUSO_ID)
     public void rodar() {
-        int avisos = gerador.avisarPrazosProximos();
-        int apagadas = gerador.apagarLidasAntigas();
-        if (avisos + apagadas > 0) {
-            log.info("Rotina de notificações: {} avisos de prazo, {} lidas antigas apagadas", avisos, apagadas);
+        try {
+            int avisos = gerador.avisarPrazosProximos();
+            if (avisos > 0) {
+                log.info("Rotina de notificações: {} avisos de prazo", avisos);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Falha ao gerar avisos de prazo próximo", ex);
+        }
+
+        try {
+            int apagadas = gerador.apagarLidasAntigas();
+            if (apagadas > 0) {
+                log.info("Rotina de notificações: {} notificações lidas antigas apagadas", apagadas);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Falha ao apagar notificações lidas antigas", ex);
         }
     }
 }
