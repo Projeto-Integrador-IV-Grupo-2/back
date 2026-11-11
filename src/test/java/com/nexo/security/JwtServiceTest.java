@@ -37,6 +37,8 @@ class JwtServiceTest {
         assertThat(claims.get(JwtService.CLAIM_PAPEL, String.class)).isEqualTo("ADMIN");
         assertThat(claims.get(JwtService.CLAIM_TENANT, String.class))
                 .isEqualTo(usuario.getTenantId().toString());
+        assertThat(claims.get(JwtService.CLAIM_VERSAO_SENHA, Integer.class))
+                .isEqualTo(usuario.getVersaoSenha());
     }
 
     @Test

@@ -93,6 +93,12 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- E-mail da recuperação de senha (issue #76): SMTP em produção. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Observabilidade / health checks -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

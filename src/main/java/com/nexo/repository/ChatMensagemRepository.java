@@ -1,8 +1,6 @@
 package com.nexo.repository;
 
 import com.nexo.entity.ChatMensagem;
-import com.nexo.entity.PapelMensagem;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
@@ -26,17 +24,4 @@ public interface ChatMensagemRepository extends JpaRepository<ChatMensagem, UUID
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from ChatMensagem m where m.sessaoId = :sessaoId")
     int apagarDaSessao(@Param("sessaoId") UUID sessaoId);
-
-    /** Mensagens de um papel enviadas pelo usuário, em todas as sessões dele, desde um instante. */
-    @Query("""
-            select count(m)
-            from ChatMensagem m
-            join ChatSessao s on s.id = m.sessaoId
-            where s.usuarioId = :usuarioId
-              and m.papel = :papel
-              and m.criadoEm >= :desde
-            """)
-    long contarDoUsuarioDesde(@Param("usuarioId") UUID usuarioId,
-                              @Param("papel") PapelMensagem papel,
-                              @Param("desde") OffsetDateTime desde);
 }

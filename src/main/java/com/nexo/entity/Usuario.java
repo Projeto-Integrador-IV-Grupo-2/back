@@ -47,6 +47,9 @@ public class Usuario {
     @Column(name = "senha_hash", nullable = false, length = 255)
     private String senhaHash;
 
+    @Column(name = "versao_senha", nullable = false)
+    private int versaoSenha;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "papel", nullable = false, columnDefinition = "papel_usuario")
@@ -115,6 +118,14 @@ public class Usuario {
 
     public void setSenhaHash(String senhaHash) {
         this.senhaHash = senhaHash;
+    }
+
+    public int getVersaoSenha() {
+        return versaoSenha;
+    }
+
+    public void incrementarVersaoSenha() {
+        versaoSenha++;
     }
 
     public Perfil getPapel() {

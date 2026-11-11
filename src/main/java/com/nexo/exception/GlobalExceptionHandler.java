@@ -192,6 +192,24 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request);
     }
 
+    /** Link de redefinição de senha inventado, expirado ou já usado (issue #76). */
+    @ExceptionHandler(TokenRedefinicaoInvalidoException.class)
+    public ResponseEntity<ApiError> handleTokenRedefinicaoInvalido(TokenRedefinicaoInvalidoException ex,
+                                                                    HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    /** Pedidos de "esqueci minha senha" demais para o mesmo e-mail ou IP (issue #76). */
+    @ExceptionHandler(LimiteDePedidosExcedidoException.class)
+    public ResponseEntity<ApiError> handleLimiteDePedidos(LimiteDePedidosExcedidoException ex,
+                                                          HttpServletRequest request) {
+        ApiError body = ApiError.of(HttpStatus.TOO_MANY_REQUESTS.value(),
+                HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase(), ex.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getSegundosParaTentarDeNovo()))
+                .body(body);
+    }
+
     /** Muitas perguntas ao assistente em pouco tempo. */
     @ExceptionHandler(LimiteDePerguntasExcedidoException.class)
     public ResponseEntity<ApiError> handleLimiteDePerguntas(LimiteDePerguntasExcedidoException ex,

@@ -164,9 +164,29 @@ o token e o envia em toda requisição no cabeçalho
 |---|---|---|
 | `POST /api/auth/login` | público | Recebe `{ "email", "senha", "tenantSubdominio?" }` e devolve o token + os dados do usuário |
 | `GET /api/auth/me` | autenticado | Devolve o usuário dono do token |
+| `POST /api/auth/esqueci-senha` | público | Recebe `{ "email", "tenantSubdominio?" }` e manda o link de redefinição. Sempre **204** |
+| `POST /api/auth/redefinir-senha` | público | Recebe `{ "token", "novaSenha" }` e troca a senha. **204**; link inválido ou expirado, **400** |
+| `GET /api/auth/me` | autenticado | Devolve o usuário dono do token, com `area` (ou `null`) e `empresa` |
+| `PUT /api/auth/me` | autenticado | O próprio usuário muda o nome (`{ "nomeCompleto" }`) e recebe o perfil atualizado |
+| `PATCH /api/auth/me/senha` | autenticado | Troca a própria senha (`{ "senhaAtual", "novaSenha" }`); **204** |
+
+**Perfil do próprio usuário:** as rotas `/me` agem sempre sobre o dono do
+token, então ninguém altera o perfil de outra pessoa. E-mail, papel e área
+continuam com o ADMIN (`PUT /api/usuarios/{id}`). Como o filtro do JWT recarrega
+o usuário do banco a cada requisição, o nome novo já aparece no próximo
+`GET /me`, sem token novo. Na troca de senha:
+
+- a nova senha segue o `@SenhaForte` (8+ caracteres, com maiúscula, minúscula e
+  número) e precisa ser diferente da atual;
+- **senha atual errada responde 400** com `fieldErrors[].field = "senhaAtual"`,
+  nunca 401, porque o front trata 401 como sessão vencida e desloga;
+- o token em uso continua valendo até expirar (a API não guarda sessão).
+
+O login devolve o mesmo formato do `GET /me` em `usuario`, já com `area` e
+`empresa`: o front usa a área nas recomendações de trilha.
 
 Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
-`/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
+`POST /api/auth/esqueci-senha`, `POST /api/auth/redefinir-senha`, `/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
 rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN`
 (role `ROLE_ADMIN`) — é o prefixo reservado para os endpoints administrativos,
 e um colaborador recebe `403` nelas.
@@ -180,6 +200,33 @@ curl -X POST http://localhost:8080/api/auth/login \
 # 2. usar o token devolvido
 curl http://localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'
 ```
+
+### Recuperação de senha
+
+O usuário que esqueceu a senha pede um link (`esqueci-senha`) e cria uma nova
+senha com ele (`redefinir-senha`). O link aponta para
+`{FRONT_URL}/redefinir-senha?token=...`.
+
+- **Não revela quem tem conta:** `esqueci-senha` responde **204** para e-mail
+  cadastrado ou não, e o e-mail sai depois do commit, em outra thread — nem o
+  tempo de resposta muda. Sem `tenantSubdominio`, cada conta ativa com o e-mail
+  recebe o próprio link; com ele, só a conta daquela empresa.
+- **Token:** 256 bits aleatórios; o banco guarda só o **hash** (SHA-256), e o
+  token nunca vai para log nem para a resposta. Vale por
+  `SENHA_TOKEN_VALIDADE` (30 minutos) e **uma vez**. Pedir um link novo invalida
+  os anteriores. Usuário inativo não recebe link nem redefine.
+- **Link inventado, expirado ou já usado:** **400**, sempre com a mesma
+  mensagem. A nova senha segue a mesma regra do cadastro (`@SenhaForte`).
+- **Limite:** `SENHA_LIMITE_PEDIDOS` (3) pedidos por e-mail **e** por IP a cada
+  `SENHA_JANELA_PEDIDOS` (15 minutos); passou, **429** com `Retry-After`. As
+  chaves do limite também são hash — a tabela não guarda e-mail nem IP.
+- **E-mail:** a `EnviadorDeEmailFactory` escolhe o enviador por
+  `EMAIL_ENVIADOR`. Em produção, `smtp` (variáveis `MAIL_*`). Em dev e test,
+  `registro`: nada sai para fora; em dev, cada e-mail vira um arquivo em
+  `./data/emails` (fora do Git), onde dá para abrir o link.
+- Depois da troca, um `SenhaRedefinidaEvent` faz os listeners mandarem o e-mail
+  "sua senha foi alterada" e registrarem `SENHA_REDEFINIDA` no histórico. Uma
+  rotina diária apaga links vencidos e pedidos antigos.
 
 ### Administrador inicial
 
@@ -531,7 +578,7 @@ HNSW e já filtrada por tenant, sem carregar vetores na aplicação. O
 |---|---|---|
 | `POST /api/assistente/sessoes` | autenticado | Cria uma conversa. Corpo opcional `{"titulo": "...", "contexto": "CONHECIMENTO"}` — a tela manda o começo da primeira pergunta como título; sem ele, o título nasce da primeira troca |
 | `GET /api/assistente/sessoes` | autenticado | Conversas do usuário, paginadas, da mais recente para a mais antiga. A ordem é fixa: `sort` na query é ignorado |
-| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"conteudo": "..."}` com até 2000 caracteres (`pergunta` segue aceito como apelido). Devolve a troca inteira: `sessao`, `pergunta` e `resposta` |
+| `POST /api/assistente/sessoes/{id}/mensagens` | autenticado | `{"conteudo": "..."}` com até 2000 caracteres (`pergunta` segue aceito como apelido). Devolve a troca (`sessao`, `pergunta`, `resposta`) e `fontes` detalhadas com documento e trecho |
 | `GET /api/assistente/sessoes/{id}/mensagens` | autenticado | Histórico da conversa, na ordem em que as mensagens foram trocadas. Cada item traz `id`, `papel`, `conteudo`, `fontes` e `criadoEm` |
 | `PATCH /api/assistente/sessoes/{id}` | autenticado | `{"titulo": "..."}` com até 200 caracteres — renomeia a conversa |
 | `DELETE /api/assistente/sessoes/{id}` | autenticado | **204**. Apaga a conversa e, junto, todas as mensagens dela |
@@ -546,13 +593,30 @@ Formato de uma conversa e de uma mensagem:
   "fontes": ["Política de férias"], "criadoEm": "2026-10-25T12:03:00Z" }
 ```
 
-> **Os nomes do JSON não são os das colunas.** `criadoEm` e `atualizadoEm`
-> saem de `iniciado_em` e `ultima_interacao`, e `fontes` é uma lista de
-> títulos em vez de objetos. Foi uma decisão do grupo: a tela do histórico
-> (front #55) já estava escrita contra esse contrato, e adaptar a API saiu
-> mais barato do que refazer a tela. O banco continua igual ao DER; só a
-> borda muda. `titulo` nunca volta nulo — enquanto a conversa não tem nome
-> próprio, vale `"Nova conversa"`.
+> **Compatibilidade do JSON:** `criadoEm` e `atualizadoEm` saem de
+> `iniciado_em` e `ultima_interacao`. A lista `resposta.fontes` e as fontes do
+> histórico continuam como títulos para clientes existentes. Adicionalmente,
+> o endpoint de pergunta retorna uma lista de topo `fontes` com objetos
+> `{documentoId, titulo, trechoId, ordem, trecho}`. Assim, a tela pode abrir o
+> documento pelo ID e exibir o trecho citado sem perder compatibilidade. O
+> banco guarda esse snapshot das fontes no JSONB de `chat_mensagem.fontes`. A
+> lista detalhada contém um item por trecho recuperado; um documento pode aparecer
+> mais de uma vez quando contribui com trechos diferentes. `titulo` nunca volta
+> nulo — enquanto a conversa não tem nome próprio, vale `"Nova conversa"`.
+
+Exemplo da lista detalhada no retorno do endpoint:
+
+```json
+"fontes": [
+  {
+    "documentoId": "uuid-do-documento",
+    "titulo": "Política de férias",
+    "trechoId": "uuid-do-trecho",
+    "ordem": 1,
+    "trecho": "Cada colaborador tem trinta dias de férias por ano."
+  }
+]
+```
 
 **Cada um só enxerga as próprias conversas — inclusive o admin.** Sessão de
 outra pessoa ou de outro tenant responde **404** em todas as rotas acima, como
@@ -571,9 +635,15 @@ O fluxo de uma pergunta é este:
 
 1. A sessão precisa ser do próprio usuário. A de outra pessoa, inclusive para o
    admin, responde **404**.
-2. Cada usuário faz até `IA_PERGUNTAS_POR_MINUTO` perguntas por minuto. A
-   contagem vem de `chat_mensagem`, então vale mesmo com várias instâncias da
-   API. Acima do limite, a resposta é **429** com `Retry-After: 60`.
+2. Cada usuário faz até `IA_PERGUNTAS_POR_MINUTO` tentativas por janela móvel
+   de 60 segundos. As reservas ficam em `assistente_consulta_limite`, sem guardar
+   o texto da pergunta ou resposta, e `assistente_limite_usuario` serializa a
+   reserva por usuário/tenant no PostgreSQL. Isso evita ultrapassar o limite
+   com chamadas concorrentes em instâncias diferentes. O instante é obtido por
+   `clock_timestamp()` após o bloqueio, usando o relógio compartilhado do banco
+   e evitando divergência entre instâncias. Falhas do provedor também consomem
+   a reserva. Acima do limite, a resposta é **429** com `Retry-After`
+   calculado até a primeira reserva expirar.
 3. A API busca os trechos mais parecidos do tenant, só de documentos publicados.
 4. **Sem nenhum trecho relevante**, a resposta é fixa ("Não encontrei essa
    informação nos documentos da empresa…"), sem fontes e **sem chamar o
@@ -584,8 +654,9 @@ O fluxo de uma pergunta é este:
    texto dos documentos é **dado, nunca instrução**, e marcações
    `<documento>` vindas do próprio texto são neutralizadas.
 6. A pergunta e a resposta são gravadas **juntas** em `chat_mensagem`, com os
-   trechos usados em `fontes` (JSON). Se o provedor cair, a resposta é **503** e
-   nada fica gravado pela metade.
+   trechos usados em `fontes` (JSONB: ID/título do documento, ID/ordem do trecho
+   e o texto citado). Se o provedor cair, a resposta é **503** e nada fica
+   gravado pela metade.
 7. A gravação publica `MensagemRegistradaEvent`. O `SessaoDoChatListener`
    escuta e é quem atualiza `ultima_interacao` e dá título à conversa a partir
    do começo da primeira pergunta — o service que grava a mensagem não mexe na
@@ -841,6 +912,16 @@ define-se a variável e ela prevalece.
 | `NOTIFICACAO_DIAS_PRAZO` | `3` | Com quantos dias de antecedência a rotina avisa o prazo da trilha |
 | `NOTIFICACAO_RETENCAO_LIDAS` | `P90D` | Por quanto tempo uma notificação lida fica guardada antes da limpeza |
 
+| `FRONT_URL` | `http://localhost:5173` | Endereço do front, base do link de redefinição de senha |
+| `SENHA_TOKEN_VALIDADE` | `PT30M` | Quanto tempo o link de redefinição vale |
+| `SENHA_LIMITE_PEDIDOS` | `3` | Pedidos de "esqueci minha senha" aceitos por e-mail e por IP na janela |
+| `SENHA_JANELA_PEDIDOS` | `PT15M` | Janela do limite de pedidos |
+| `EMAIL_ENVIADOR` | `smtp` (`registro` em dev/test) | `smtp` envia de verdade; `registro` só guarda o envio |
+| `EMAIL_PASTA` | `./data/emails` (só dev) | Pasta onde o enviador `registro` grava cada e-mail |
+| `MAIL_HOST` / `MAIL_PORT` | `localhost` / `587` | Servidor SMTP |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | *(vazio)* | Credenciais do SMTP |
+| `MAIL_REMETENTE` | `nao-responda@nexo.com.br` | Endereço do "De:" dos e-mails |
+
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
 ```bash
@@ -852,6 +933,12 @@ cp .env.example .env
 
 **CORS:** ajuste `CORS_ALLOWED_ORIGINS` para o endereço em que o front roda.
 Use origens explícitas (não `*`), porque o envio de credenciais está habilitado.
+
+**Proxy reverso:** `server.forward-headers-strategy=framework` usa os cabeçalhos
+encaminhados para identificar o IP do cliente no limite de pedidos de senha.
+Configure apenas proxies confiáveis para remover cabeçalhos recebidos do cliente
+e definir `Forwarded`/`X-Forwarded-*`; não exponha a API aceitando esses valores
+diretamente de clientes.
 
 ---
 
@@ -918,6 +1005,7 @@ do PR. O workflow **não usa segredos**.
 | V19 | `V19__create_conteudo_chunk_e_indexacao.sql` | Extensão `vector`, tabela `conteudo_chunk` (embedding `vector(768)` + índice HNSW), enum `status_indexacao` e tabela `indexacao_conteudo` |
 | V20 | `V20__create_chat_sessao_e_mensagem.sql` | Enums `contexto_chat`/`papel_mensagem` e tabelas `chat_sessao` e `chat_mensagem` (com `fontes` em JSONB; apagar a sessão apaga as mensagens) |
 | V21 | `V21__create_arquivo_e_tipo_documento.sql` | Tipo `DOCUMENTO` em `tipo_conteudo`, enum `tipo_arquivo`, tabela `arquivo` e índices tenant + categoria e tenant + área em `conteudo` |
+| V24 | `V24__create_recuperacao_senha.sql` | Tabelas `token_redefinicao_senha` (só o hash do token) e `pedido_redefinicao_senha` (limite de pedidos) e o tipo `SENHA_REDEFINIDA` no histórico |
 | V25 | `V25__create_notificacao.sql` | Tabela `notificacao` (tipo com CHECK, chave composta por tenant com `ON DELETE CASCADE`), índices da lista e das não lidas e índice único parcial que impede aviso de prazo repetido |
 
 **Atenção ao atualizar um banco que já contém dados:** as migrations V14 e V15

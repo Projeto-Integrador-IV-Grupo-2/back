@@ -20,6 +20,9 @@ public interface UsuarioRepository
 
     List<Usuario> findTop2ByEmailIgnoreCaseOrderByIdAsc(String email);
 
+    /** Contas ativas com o e-mail, em qualquer tenant — "esqueci minha senha" sem empresa informada. */
+    List<Usuario> findByEmailIgnoreCaseAndAtivoTrue(String email);
+
     Optional<Usuario> findByTenantIdAndEmailIgnoreCase(UUID tenantId, String email);
 
     boolean existsByEmailIgnoreCase(String email);

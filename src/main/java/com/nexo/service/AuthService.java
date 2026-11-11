@@ -27,13 +27,16 @@ public class AuthService {
     private final JwtService jwtService;
     private final UsuarioRepository usuarioRepository;
     private final TenantRepository tenantRepository;
+    private final PerfilService perfilService;
 
     public AuthService(AuthenticationManager authenticationManager, JwtService jwtService,
-                       UsuarioRepository usuarioRepository, TenantRepository tenantRepository) {
+                       UsuarioRepository usuarioRepository, TenantRepository tenantRepository,
+                       PerfilService perfilService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.usuarioRepository = usuarioRepository;
         this.tenantRepository = tenantRepository;
+        this.perfilService = perfilService;
     }
 
     /**
@@ -49,11 +52,11 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(candidato.getId().toString(), request.senha()));
         UsuarioAutenticado usuario = (UsuarioAutenticado) autenticacao.getPrincipal();
         JwtService.Token token = jwtService.gerar(usuario);
-        return LoginResponse.bearer(token.valor(), token.expiraEm(), MeResponse.de(usuario));
+        return LoginResponse.bearer(token.valor(), token.expiraEm(), usuarioAtual(usuario));
     }
 
     public MeResponse usuarioAtual(UsuarioAutenticado usuario) {
-        return MeResponse.de(usuario);
+        return perfilService.dadosDe(usuario.getId(), usuario.getTenantId());
     }
 
     private Usuario resolverUsuario(String email, String subdominioPedido) {
