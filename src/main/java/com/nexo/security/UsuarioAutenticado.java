@@ -27,9 +27,15 @@ public class UsuarioAutenticado implements UserDetails {
     private final String senhaHash;
     private final Perfil papel;
     private final boolean ativo;
+    private final int versaoSenha;
 
     public UsuarioAutenticado(UUID id, UUID tenantId, String nomeCompleto, String email,
                               String senhaHash, Perfil papel, boolean ativo) {
+        this(id, tenantId, nomeCompleto, email, senhaHash, papel, ativo, 0);
+    }
+
+    public UsuarioAutenticado(UUID id, UUID tenantId, String nomeCompleto, String email,
+                              String senhaHash, Perfil papel, boolean ativo, int versaoSenha) {
         this.id = id;
         this.tenantId = tenantId;
         this.nomeCompleto = nomeCompleto;
@@ -37,6 +43,7 @@ public class UsuarioAutenticado implements UserDetails {
         this.senhaHash = senhaHash;
         this.papel = papel;
         this.ativo = ativo;
+        this.versaoSenha = versaoSenha;
     }
 
     public static UsuarioAutenticado de(Usuario usuario) {
@@ -47,7 +54,8 @@ public class UsuarioAutenticado implements UserDetails {
                 usuario.getEmail(),
                 usuario.getSenhaHash(),
                 usuario.getPapel(),
-                usuario.isAtivo() && usuario.getTenant().isAtivo());
+                usuario.isAtivo() && usuario.getTenant().isAtivo(),
+                usuario.getVersaoSenha());
     }
 
     public UUID getId() {
@@ -56,6 +64,10 @@ public class UsuarioAutenticado implements UserDetails {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public int getVersaoSenha() {
+        return versaoSenha;
     }
 
     public String getNomeCompleto() {

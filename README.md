@@ -860,6 +860,12 @@ cp .env.example .env
 **CORS:** ajuste `CORS_ALLOWED_ORIGINS` para o endereço em que o front roda.
 Use origens explícitas (não `*`), porque o envio de credenciais está habilitado.
 
+**Proxy reverso:** `server.forward-headers-strategy=framework` usa os cabeçalhos
+encaminhados para identificar o IP do cliente no limite de pedidos de senha.
+Configure apenas proxies confiáveis para remover cabeçalhos recebidos do cliente
+e definir `Forwarded`/`X-Forwarded-*`; não exponha a API aceitando esses valores
+diretamente de clientes.
+
 ---
 
 ## Quando o CI roda

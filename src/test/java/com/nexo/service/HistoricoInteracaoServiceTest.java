@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.nexo.entity.Perfil;
+import com.nexo.entity.TipoInteracaoHistorico;
 import com.nexo.exception.ParametroInvalidoException;
 import com.nexo.repository.HistoricoInteracaoRepository;
 import com.nexo.security.UsuarioAutenticado;
@@ -59,6 +60,24 @@ class HistoricoInteracaoServiceTest {
         service.listar(null, colaborador);
 
         verify(repository).findAllByTenantIdAndUsuarioId(eq(tenantId), eq(usuarioId), any(Pageable.class));
+    }
+
+    @Test
+    void ultimasAtividadesFiltraTiposDeTrilhaAntesDeAplicarOLimite() {
+        UUID tenantId = UUID.randomUUID();
+        UUID usuarioId = UUID.randomUUID();
+        UsuarioAutenticado colaborador = usuario(usuarioId, tenantId, Perfil.COLABORADOR);
+        List<TipoInteracaoHistorico> tiposDeTrilha = List.of(
+                TipoInteracaoHistorico.TRILHA_ACESSADA,
+                TipoInteracaoHistorico.TRILHA_INICIADA,
+                TipoInteracaoHistorico.TRILHA_CONCLUIDA);
+        when(repository.findTop10ByTenantIdAndUsuarioIdAndTipoInOrderByCriadoEmDescIdDesc(
+                tenantId, usuarioId, tiposDeTrilha)).thenReturn(List.of());
+
+        service.ultimasAtividades(colaborador);
+
+        verify(repository).findTop10ByTenantIdAndUsuarioIdAndTipoInOrderByCriadoEmDescIdDesc(
+                tenantId, usuarioId, tiposDeTrilha);
     }
 
     @Test

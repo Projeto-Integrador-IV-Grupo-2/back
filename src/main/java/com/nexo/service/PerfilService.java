@@ -58,6 +58,7 @@ public class PerfilService {
             throw new CampoInvalidoException("novaSenha", "A nova senha precisa ser diferente da atual.");
         }
         atual.setSenhaHash(passwordEncoder.encode(request.novaSenha()));
+        atual.incrementarVersaoSenha();
         usuarioRepository.save(atual);
     }
 

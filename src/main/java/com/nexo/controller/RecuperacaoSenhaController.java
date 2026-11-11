@@ -28,8 +28,9 @@ public class RecuperacaoSenhaController {
 
     /**
      * Sempre 204, exista ou não a conta: a resposta não revela quem tem
-     * cadastro. O IP é o da conexão ({@code getRemoteAddr}); atrás de um proxy,
-     * habilite {@code server.forward-headers-strategy} para ele vir certo.
+     * cadastro. O IP respeita os cabeçalhos do proxy configurados pelo
+     * {@code server.forward-headers-strategy}; só proxies confiáveis devem
+     * encaminhar esses cabeçalhos.
      */
     @PostMapping("/esqueci-senha")
     public ResponseEntity<Void> esqueciSenha(@Valid @RequestBody EsqueciSenhaRequest request,

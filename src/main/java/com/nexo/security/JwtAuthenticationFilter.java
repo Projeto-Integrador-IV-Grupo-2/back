@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.util.StringUtils;
@@ -42,8 +41,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
             extrairToken(request)
-                    .flatMap(jwtService::extrairUsuarioId)
-                    .ifPresent(usuarioId -> autenticar(usuarioId, request));
+                    .flatMap(jwtService::extrairIdentidade)
+                    .ifPresent(identidade -> autenticar(
+                            identidade.usuarioId(), identidade.versaoSenha(), request));
         }
         chain.doFilter(request, response);
     }
@@ -57,12 +57,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return StringUtils.hasText(token) ? Optional.of(token) : Optional.empty();
     }
 
-    private void autenticar(java.util.UUID usuarioId, HttpServletRequest request) {
+    private void autenticar(java.util.UUID usuarioId, int versaoSenha, HttpServletRequest request) {
         try {
-            UserDetails usuario = userDetailsService.loadUserById(usuarioId);
+            UsuarioAutenticado usuario = userDetailsService.loadUserById(usuarioId);
             // O token continua válido, mas o usuário pode ter sido desativado depois de emitido.
             if (!usuario.isEnabled()) {
                 log.debug("Token válido de usuário inativo ignorado");
+                return;
+            }
+            if (usuario.getVersaoSenha() != versaoSenha) {
+                log.debug("Token JWT de uma versão de senha anterior ignorado");
                 return;
             }
             UsernamePasswordAuthenticationToken autenticacao =

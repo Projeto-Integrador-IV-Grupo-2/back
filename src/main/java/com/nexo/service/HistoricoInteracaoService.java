@@ -3,6 +3,7 @@ package com.nexo.service;
 import com.nexo.dto.HistoricoInteracaoResponse;
 import com.nexo.entity.HistoricoInteracao;
 import com.nexo.entity.Perfil;
+import com.nexo.entity.TipoInteracaoHistorico;
 import com.nexo.event.PerguntaRespondidaEvent;
 import com.nexo.event.SenhaRedefinidaEvent;
 import com.nexo.event.TrilhaAcessadaEvent;
@@ -83,8 +84,11 @@ public class HistoricoInteracaoService {
 
     @Transactional(readOnly = true)
     public List<HistoricoInteracaoResponse> ultimasAtividades(UsuarioAutenticado requisitante) {
-        return historicoRepository.findTop10ByTenantIdAndUsuarioIdOrderByCriadoEmDescIdDesc(
-                        requisitante.getTenantId(), requisitante.getId())
+        return historicoRepository.findTop10ByTenantIdAndUsuarioIdAndTipoInOrderByCriadoEmDescIdDesc(
+                        requisitante.getTenantId(), requisitante.getId(),
+                        List.of(TipoInteracaoHistorico.TRILHA_ACESSADA,
+                                TipoInteracaoHistorico.TRILHA_INICIADA,
+                                TipoInteracaoHistorico.TRILHA_CONCLUIDA))
                 .stream()
                 .map(HistoricoInteracaoResponse::de)
                 .toList();

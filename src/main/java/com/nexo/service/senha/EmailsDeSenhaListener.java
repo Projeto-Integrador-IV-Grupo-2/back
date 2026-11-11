@@ -49,7 +49,8 @@ public class EmailsDeSenhaListener {
         String link = email.frontUrl() + "/redefinir-senha?token="
                 + URLEncoder.encode(evento.token(), StandardCharsets.UTF_8);
         String corpo = "Olá, " + evento.nome() + ".\n\n"
-                + "Recebemos um pedido para redefinir a sua senha no Nexo. Para criar uma nova senha, "
+                + "Recebemos um pedido para redefinir a sua senha da conta de "
+                + evento.nomeEmpresa() + " no Nexo. Para criar uma nova senha, "
                 + "abra o link abaixo:\n\n" + link + "\n\n"
                 + "O link vale por " + senha.tokenValidade().toMinutes() + " minutos e só pode ser usado uma vez.\n"
                 + "Se não foi você, ignore este e-mail: a sua senha continua a mesma.";

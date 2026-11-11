@@ -14,6 +14,9 @@
 -- historico_interacao ganha SENHA_REDEFINIDA. Número V24: a V23 está no
 -- PR #74 (limite de perguntas do assistente).
 -- =========================================================================
+ALTER TABLE usuario
+    ADD COLUMN versao_senha INTEGER NOT NULL DEFAULT 0;
+
 CREATE TABLE token_redefinicao_senha (
     id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id   UUID         NOT NULL REFERENCES tenant (id),

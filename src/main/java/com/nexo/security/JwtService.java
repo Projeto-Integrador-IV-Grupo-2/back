@@ -30,6 +30,7 @@ public class JwtService {
     static final String CLAIM_EMAIL = "email";
     static final String CLAIM_PAPEL = "papel";
     static final String CLAIM_TENANT = "tenantId";
+    static final String CLAIM_VERSAO_SENHA = "versaoSenha";
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
 
@@ -55,6 +56,7 @@ public class JwtService {
                 .claim(CLAIM_EMAIL, usuario.getEmail())
                 .claim(CLAIM_PAPEL, usuario.getPapel().name())
                 .claim(CLAIM_TENANT, usuario.getTenantId().toString())
+                .claim(CLAIM_VERSAO_SENHA, usuario.getVersaoSenha())
                 .signWith(chave)
                 .compact();
         return new Token(valor, expiraEm);
@@ -81,10 +83,17 @@ public class JwtService {
 
     /** UUID do usuário extraído do subject assinado, quando o token é válido. */
     public Optional<UUID> extrairUsuarioId(String token) {
+        return extrairIdentidade(token).map(IdentidadeToken::usuarioId);
+    }
+
+    /** Identidade assinada e versão de senha do token; tokens legados usam a versão inicial. */
+    public Optional<IdentidadeToken> extrairIdentidade(String token) {
         return validar(token).flatMap(claims -> {
             try {
-                return Optional.of(UUID.fromString(claims.getSubject()));
-            } catch (IllegalArgumentException | NullPointerException ex) {
+                UUID usuarioId = UUID.fromString(claims.getSubject());
+                Integer versaoSenha = claims.get(CLAIM_VERSAO_SENHA, Integer.class);
+                return Optional.of(new IdentidadeToken(usuarioId, versaoSenha == null ? 0 : versaoSenha));
+            } catch (JwtException | IllegalArgumentException | NullPointerException ex) {
                 log.debug("Subject JWT rejeitado: {}", ex.getMessage());
                 return Optional.empty();
             }
@@ -98,5 +107,8 @@ public class JwtService {
 
     /** Token assinado e o instante em que ele deixa de valer. */
     public record Token(String valor, Instant expiraEm) {
+    }
+
+    public record IdentidadeToken(UUID usuarioId, int versaoSenha) {
     }
 }

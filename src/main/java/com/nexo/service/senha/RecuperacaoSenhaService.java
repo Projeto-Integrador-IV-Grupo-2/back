@@ -93,7 +93,8 @@ public class RecuperacaoSenhaService {
             tokenRepository.save(TokenRedefinicaoSenha.novo(
                     usuario, token.hash(), agora.plus(properties.tokenValidade())));
             publisher.publishEvent(new RedefinicaoSenhaSolicitadaEvent(
-                    usuario.getId(), usuario.getEmail(), usuario.getNomeCompleto(), token.valor()));
+                    usuario.getId(), usuario.getEmail(), usuario.getNomeCompleto(),
+                    usuario.getTenant().getNome(), token.valor()));
         }
     }
 
@@ -112,6 +113,7 @@ public class RecuperacaoSenhaService {
 
         Usuario usuario = registro.getUsuario();
         usuario.setSenhaHash(passwordEncoder.encode(novaSenha));
+        usuario.incrementarVersaoSenha();
         registro.marcarUsado(agora);
         // Grava o uso antes de apagar os outros links: a exclusão em lote só
         // pega os ainda não usados, e este já precisa constar como usado.

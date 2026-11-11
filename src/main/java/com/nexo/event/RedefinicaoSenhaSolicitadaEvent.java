@@ -9,7 +9,8 @@ import java.util.UUID;
  * ele nunca vai para o banco nem para log. O {@link #toString()} esconde o
  * token, para ele não aparecer num log por acidente.</p>
  */
-public record RedefinicaoSenhaSolicitadaEvent(UUID usuarioId, String email, String nome, String token) {
+public record RedefinicaoSenhaSolicitadaEvent(
+        UUID usuarioId, String email, String nome, String nomeEmpresa, String token) {
 
     @Override
     public String toString() {

@@ -76,6 +76,7 @@ class RecuperacaoSenhaServiceTest {
                 Clock.fixed(AGORA, ZoneOffset.UTC));
         Tenant tenant = new Tenant();
         ReflectionTestUtils.setField(tenant, "id", UUID.randomUUID());
+        tenant.setNome("Empresa Exemplo");
         ana = new Usuario();
         ana.setTenant(tenant);
         ana.setNomeCompleto("Ana Souza");
@@ -103,6 +104,7 @@ class RecuperacaoSenhaServiceTest {
         assertThat(token.getValue().getExpiraEm()).isEqualTo(OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC)
                 .plusMinutes(30));
         assertThat(evento.getValue().email()).isEqualTo("ana@empresa.com");
+        assertThat(evento.getValue().nomeEmpresa()).isEqualTo("Empresa Exemplo");
         // Pedir um link novo invalida os anteriores ainda não usados.
         verify(tokenRepository).apagarNaoUsadosDoUsuario(ana.getId());
     }
@@ -164,6 +166,7 @@ class RecuperacaoSenhaServiceTest {
         service.redefinir("valor", "NovaSenha1");
 
         assertThat(ana.getSenhaHash()).isEqualTo("{bcrypt}hash");
+        assertThat(ana.getVersaoSenha()).isEqualTo(1);
         assertThat(token.getUsadoEm()).isEqualTo(OffsetDateTime.ofInstant(AGORA, ZoneOffset.UTC));
         verify(tokenRepository).apagarNaoUsadosDoUsuario(ana.getId());
         verify(publisher).publishEvent(new SenhaRedefinidaEvent(ana.getTenant().getId(), ana.getId()));
