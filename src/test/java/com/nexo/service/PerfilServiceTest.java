@@ -112,6 +112,7 @@ class PerfilServiceTest {
 
         assertThat(passwordEncoder.matches("NovaSenha2", usuario.getSenhaHash())).isTrue();
         assertThat(passwordEncoder.matches(SENHA_ATUAL, usuario.getSenhaHash())).isFalse();
+        assertThat(usuario.getVersaoSenha()).isEqualTo(1);
         verify(usuarioRepository).save(usuario);
     }
 

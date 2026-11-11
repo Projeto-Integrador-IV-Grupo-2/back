@@ -42,6 +42,12 @@ public class SecurityConfig {
 
     private static final String LOGIN = "/api/auth/login";
 
+    /** Recuperação de senha (issue #76): quem esqueceu a senha não tem token. */
+    private static final String[] RECUPERACAO_SENHA = {
+            "/api/auth/esqueci-senha",
+            "/api/auth/redefinir-senha"
+    };
+
     private static final String[] ENDPOINTS_PUBLICOS = {
             "/api/health",
             "/actuator/health",
@@ -65,6 +71,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, LOGIN).permitAll()
+                        .requestMatchers(HttpMethod.POST, RECUPERACAO_SENHA).permitAll()
                         .requestMatchers(ENDPOINTS_PUBLICOS).permitAll()
                         .requestMatchers(ENDPOINTS_ADMINISTRATIVOS).hasRole(Perfil.ADMIN.name())
                         .anyRequest().authenticated())

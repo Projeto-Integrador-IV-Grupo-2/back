@@ -35,8 +35,24 @@ spring:
       max-file-size: ${DOCUMENTOS_TAMANHO_MAXIMO:10MB}
       max-request-size: ${DOCUMENTOS_TAMANHO_MAXIMO_REQUISICAO:12MB}
 
+  # SMTP do envio de e-mails (recuperação de senha). Só é usado quando
+  # app.email.enviador = smtp (padrão fora de dev/test).
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:true}
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
+
 server:
   port: ${SERVER_PORT:8080}
+  # A API espera estar atrás de um proxy confiável que sobrescreva os cabeçalhos Forwarded.
+  forward-headers-strategy: framework
 
 # ---- Actuator: expõe apenas health e info ----
 management:
@@ -49,6 +65,11 @@ management:
       probes:
         enabled: true
       show-details: never
+  # Sem isto, o health ficaria DOWN sempre que o SMTP não respondesse — o
+  # e-mail não é dependência para a API funcionar.
+  health:
+    mail:
+      enabled: false
   info:
     env:
       enabled: true
@@ -120,6 +141,21 @@ app:
     tipo: ${ARMAZENAMENTO_TIPO:local}
     diretorio: ${ARMAZENAMENTO_DIRETORIO:./data/arquivos}
 
+  # ---- Recuperação de senha (issue #76) ----
+  senha:
+    token-validade: ${SENHA_TOKEN_VALIDADE:PT30M}
+    # Pedidos de "esqueci minha senha" aceitos por e-mail e por IP na janela.
+    limite-pedidos: ${SENHA_LIMITE_PEDIDOS:3}
+    janela-pedidos: ${SENHA_JANELA_PEDIDOS:PT15M}
+
+  # ---- E-mail ----
+  # smtp: envia de verdade (spring.mail.*). registro: só guarda o envio (e,
+  # com app.email.pasta, grava cada e-mail num arquivo) — dev e test.
+  email:
+    enviador: ${EMAIL_ENVIADOR:smtp}
+    remetente: ${MAIL_REMETENTE:nao-responda@nexo.com.br}
+    front-url: ${FRONT_URL:http://localhost:5173}
+
 logging:
   level:
     root: INFO
@@ -150,6 +186,11 @@ app:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
   jwt:
     secret: ${JWT_SECRET:nexo-chave-de-desenvolvimento-local-nao-use-em-producao}
+  # Em dev os e-mails não saem: cada um vira um arquivo em ./data/emails
+  # (fora do Git), onde dá para abrir o link de redefinição.
+  email:
+    enviador: ${EMAIL_ENVIADOR:registro}
+    pasta: ${EMAIL_PASTA:./data/emails}
 
 logging:
   level:
@@ -183,6 +224,9 @@ app:
   # Cada execução de testes grava numa pasta temporária, nunca no projeto.
   armazenamento:
     diretorio: ${java.io.tmpdir}/nexo-arquivos-teste
+  # Os testes leem o link no enviador que só registra o envio.
+  email:
+    enviador: registro
 
 logging:
   level:

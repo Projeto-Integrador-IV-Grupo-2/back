@@ -1,6 +1,7 @@
 package com.nexo.repository;
 
 import com.nexo.entity.HistoricoInteracao;
+import com.nexo.entity.TipoInteracaoHistorico;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -21,6 +22,10 @@ public interface HistoricoInteracaoRepository extends JpaRepository<HistoricoInt
     @EntityGraph(attributePaths = "usuario")
     List<HistoricoInteracao> findTop10ByTenantIdAndUsuarioIdOrderByCriadoEmDescIdDesc(
             UUID tenantId, UUID usuarioId);
+
+    @EntityGraph(attributePaths = "usuario")
+    List<HistoricoInteracao> findTop10ByTenantIdAndUsuarioIdAndTipoInOrderByCriadoEmDescIdDesc(
+            UUID tenantId, UUID usuarioId, List<TipoInteracaoHistorico> tipos);
 
     @Query(value = """
             SELECT trilha_id,

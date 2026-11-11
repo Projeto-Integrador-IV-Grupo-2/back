@@ -163,6 +163,10 @@ o token e o envia em toda requisição no cabeçalho
 | Endpoint | Acesso | O que faz |
 |---|---|---|
 | `POST /api/auth/login` | público | Recebe `{ "email", "senha", "tenantSubdominio?" }` e devolve o token + os dados do usuário |
+| `GET /api/auth/me` | autenticado | Devolve o usuário dono do token |
+| `POST /api/auth/esqueci-senha` | público | Recebe `{ "email", "tenantSubdominio?" }` e manda o link de redefinição. Sempre **204** |
+| `POST /api/auth/redefinir-senha` | público | Recebe `{ "token", "novaSenha" }` e troca a senha. **204**; link inválido ou expirado, **400** |
+=======
 | `GET /api/auth/me` | autenticado | Devolve o usuário dono do token, com `area` (ou `null`) e `empresa` |
 | `PUT /api/auth/me` | autenticado | O próprio usuário muda o nome (`{ "nomeCompleto" }`) e recebe o perfil atualizado |
 | `PATCH /api/auth/me/senha` | autenticado | Troca a própria senha (`{ "senhaAtual", "novaSenha" }`); **204** |
@@ -183,7 +187,7 @@ O login devolve o mesmo formato do `GET /me` em `usuario`, já com `area` e
 `empresa`: o front usa a área nas recomendações de trilha.
 
 Todo endpoint que não esteja na lista de públicos (`POST /api/auth/login`,
-`/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
+`POST /api/auth/esqueci-senha`, `POST /api/auth/redefinir-senha`, `/api/health`, `/actuator/health`, `/actuator/info`) exige token válido. As
 rotas sob **`/api/admin/**`** exigem, além do token, o perfil `ADMIN`
 (role `ROLE_ADMIN`) — é o prefixo reservado para os endpoints administrativos,
 e um colaborador recebe `403` nelas.
@@ -197,6 +201,33 @@ curl -X POST http://localhost:8080/api/auth/login \
 # 2. usar o token devolvido
 curl http://localhost:8080/api/auth/me -H 'Authorization: Bearer <token>'
 ```
+
+### Recuperação de senha
+
+O usuário que esqueceu a senha pede um link (`esqueci-senha`) e cria uma nova
+senha com ele (`redefinir-senha`). O link aponta para
+`{FRONT_URL}/redefinir-senha?token=...`.
+
+- **Não revela quem tem conta:** `esqueci-senha` responde **204** para e-mail
+  cadastrado ou não, e o e-mail sai depois do commit, em outra thread — nem o
+  tempo de resposta muda. Sem `tenantSubdominio`, cada conta ativa com o e-mail
+  recebe o próprio link; com ele, só a conta daquela empresa.
+- **Token:** 256 bits aleatórios; o banco guarda só o **hash** (SHA-256), e o
+  token nunca vai para log nem para a resposta. Vale por
+  `SENHA_TOKEN_VALIDADE` (30 minutos) e **uma vez**. Pedir um link novo invalida
+  os anteriores. Usuário inativo não recebe link nem redefine.
+- **Link inventado, expirado ou já usado:** **400**, sempre com a mesma
+  mensagem. A nova senha segue a mesma regra do cadastro (`@SenhaForte`).
+- **Limite:** `SENHA_LIMITE_PEDIDOS` (3) pedidos por e-mail **e** por IP a cada
+  `SENHA_JANELA_PEDIDOS` (15 minutos); passou, **429** com `Retry-After`. As
+  chaves do limite também são hash — a tabela não guarda e-mail nem IP.
+- **E-mail:** a `EnviadorDeEmailFactory` escolhe o enviador por
+  `EMAIL_ENVIADOR`. Em produção, `smtp` (variáveis `MAIL_*`). Em dev e test,
+  `registro`: nada sai para fora; em dev, cada e-mail vira um arquivo em
+  `./data/emails` (fora do Git), onde dá para abrir o link.
+- Depois da troca, um `SenhaRedefinidaEvent` faz os listeners mandarem o e-mail
+  "sua senha foi alterada" e registrarem `SENHA_REDEFINIDA` no histórico. Uma
+  rotina diária apaga links vencidos e pedidos antigos.
 
 ### Administrador inicial
 
@@ -831,6 +862,15 @@ define-se a variável e ela prevalece.
 | `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
 | `IA_PERGUNTAS_POR_MINUTO` | `10` | Perguntas ao assistente aceitas por usuário a cada minuto |
 | `IA_MENSAGENS_HISTORICO` | `6` | Mensagens anteriores da sessão que entram no prompt |
+| `FRONT_URL` | `http://localhost:5173` | Endereço do front, base do link de redefinição de senha |
+| `SENHA_TOKEN_VALIDADE` | `PT30M` | Quanto tempo o link de redefinição vale |
+| `SENHA_LIMITE_PEDIDOS` | `3` | Pedidos de "esqueci minha senha" aceitos por e-mail e por IP na janela |
+| `SENHA_JANELA_PEDIDOS` | `PT15M` | Janela do limite de pedidos |
+| `EMAIL_ENVIADOR` | `smtp` (`registro` em dev/test) | `smtp` envia de verdade; `registro` só guarda o envio |
+| `EMAIL_PASTA` | `./data/emails` (só dev) | Pasta onde o enviador `registro` grava cada e-mail |
+| `MAIL_HOST` / `MAIL_PORT` | `localhost` / `587` | Servidor SMTP |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | *(vazio)* | Credenciais do SMTP |
+| `MAIL_REMETENTE` | `nao-responda@nexo.com.br` | Endereço do "De:" dos e-mails |
 
 Para o Docker Compose, copie o modelo (opcional — há defaults):
 
@@ -843,6 +883,12 @@ cp .env.example .env
 
 **CORS:** ajuste `CORS_ALLOWED_ORIGINS` para o endereço em que o front roda.
 Use origens explícitas (não `*`), porque o envio de credenciais está habilitado.
+
+**Proxy reverso:** `server.forward-headers-strategy=framework` usa os cabeçalhos
+encaminhados para identificar o IP do cliente no limite de pedidos de senha.
+Configure apenas proxies confiáveis para remover cabeçalhos recebidos do cliente
+e definir `Forwarded`/`X-Forwarded-*`; não exponha a API aceitando esses valores
+diretamente de clientes.
 
 ---
 
@@ -909,6 +955,7 @@ do PR. O workflow **não usa segredos**.
 | V19 | `V19__create_conteudo_chunk_e_indexacao.sql` | Extensão `vector`, tabela `conteudo_chunk` (embedding `vector(768)` + índice HNSW), enum `status_indexacao` e tabela `indexacao_conteudo` |
 | V20 | `V20__create_chat_sessao_e_mensagem.sql` | Enums `contexto_chat`/`papel_mensagem` e tabelas `chat_sessao` e `chat_mensagem` (com `fontes` em JSONB; apagar a sessão apaga as mensagens) |
 | V21 | `V21__create_arquivo_e_tipo_documento.sql` | Tipo `DOCUMENTO` em `tipo_conteudo`, enum `tipo_arquivo`, tabela `arquivo` e índices tenant + categoria e tenant + área em `conteudo` |
+| V24 | `V24__create_recuperacao_senha.sql` | Tabelas `token_redefinicao_senha` (só o hash do token) e `pedido_redefinicao_senha` (limite de pedidos) e o tipo `SENHA_REDEFINIDA` no histórico |
 
 **Atenção ao atualizar um banco que já contém dados:** as migrations V14 e V15
 validam as relações entre tenants e as duplicidades de e-mail/subdomínio sem
