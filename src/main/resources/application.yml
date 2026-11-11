@@ -141,6 +141,13 @@ app:
     tipo: ${ARMAZENAMENTO_TIPO:local}
     diretorio: ${ARMAZENAMENTO_DIRETORIO:./data/arquivos}
 
+  # ---- Notificações (issue #78) ----
+  notificacoes:
+    # Com quantos dias de antecedência sai o aviso de prazo próximo.
+    dias-antes-do-prazo: ${NOTIFICACAO_DIAS_PRAZO:3}
+    # Notificações lidas há mais que isso são apagadas pela rotina diária.
+    retencao-lidas: ${NOTIFICACAO_RETENCAO_LIDAS:P90D}
+
   # ---- Recuperação de senha (issue #76) ----
   senha:
     token-validade: ${SENHA_TOKEN_VALIDADE:PT30M}

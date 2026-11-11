@@ -1,5 +1,6 @@
 package com.nexo.repository;
 
+import com.nexo.entity.Perfil;
 import com.nexo.entity.Usuario;
 import java.util.Collection;
 import java.util.List;
@@ -39,6 +40,12 @@ public interface UsuarioRepository
 
     /** Destinatários de uma atribuição de trilha por área: só os ativos. */
     List<Usuario> findByTenantIdAndAreaIdAndAtivoTrue(UUID tenantId, UUID areaId);
+
+    /** Destinatários de notificação por perfil: os ativos de uma área (issue #78). */
+    List<Usuario> findByTenantIdAndAreaIdAndPapelAndAtivoTrue(UUID tenantId, UUID areaId, Perfil papel);
+
+    /** Destinatários de notificação por perfil: os ativos do tenant inteiro (issue #78). */
+    List<Usuario> findByTenantIdAndPapelAndAtivoTrue(UUID tenantId, Perfil papel);
 
     /**
      * Quantos usuários cada área tem, numa consulta só (evita N+1 na listagem).
