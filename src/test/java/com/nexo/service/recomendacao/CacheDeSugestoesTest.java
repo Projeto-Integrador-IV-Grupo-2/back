@@ -67,6 +67,21 @@ class CacheDeSugestoesTest {
     }
 
     @Test
+    void invalidarTenantEsqueceTodosDoTenantESoDele() {
+        UUID outroUsuario = UUID.randomUUID();
+        UUID outroTenant = UUID.randomUUID();
+        cache.guardar(tenantId, usuarioId, resposta(UUID.randomUUID()));
+        cache.guardar(tenantId, outroUsuario, resposta(UUID.randomUUID()));
+        cache.guardar(outroTenant, usuarioId, resposta(UUID.randomUUID()));
+
+        cache.invalidarTenant(tenantId);
+
+        assertThat(cache.buscar(tenantId, usuarioId)).isEmpty();
+        assertThat(cache.buscar(tenantId, outroUsuario)).isEmpty();
+        assertThat(cache.buscar(outroTenant, usuarioId)).isPresent();
+    }
+
+    @Test
     void mesmoIdDeUsuarioEmTenantsDiferentesNaoSeMistura() {
         UUID outroTenant = UUID.randomUUID();
         cache.guardar(tenantId, usuarioId, resposta(UUID.randomUUID()));

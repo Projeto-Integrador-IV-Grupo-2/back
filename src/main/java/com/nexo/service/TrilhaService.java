@@ -11,6 +11,7 @@ import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
 import com.nexo.event.TrilhaAcessadaEvent;
 import com.nexo.event.TrilhaInativadaEvent;
+import com.nexo.event.TrilhaReativadaEvent;
 import com.nexo.exception.NomeDuplicadoException;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
@@ -251,18 +252,29 @@ public class TrilhaService {
     @Transactional
     public TrilhaResumoResponse inativar(UUID trilhaId, UsuarioAutenticado requisitante) {
         Trilha trilha = buscarEntidadeNoTenant(trilhaId, requisitante.getTenantId());
+        boolean estavaAtiva = trilha.isAtivo();
         trilha.setAtivo(false);
         TrilhaResumoResponse resposta = TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
-        publisher.publishEvent(new TrilhaInativadaEvent(
-                trilha.getId(), trilha.getTenant().getId(), requisitante.getId()));
+        // Só anuncia quando algo mudou: inativar de novo não é novidade.
+        if (estavaAtiva) {
+            publisher.publishEvent(new TrilhaInativadaEvent(
+                    trilha.getId(), trilha.getTenant().getId(), requisitante.getId()));
+        }
         return resposta;
     }
 
     @Transactional
     public TrilhaResumoResponse ativar(UUID trilhaId, UsuarioAutenticado requisitante) {
         Trilha trilha = buscarEntidadeNoTenant(trilhaId, requisitante.getTenantId());
+        boolean estavaInativa = !trilha.isAtivo();
         trilha.setAtivo(true);
-        return TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
+        TrilhaResumoResponse resposta = TrilhaResumoResponse.de(trilhaRepository.saveAndFlush(trilha));
+        // Só anuncia quando algo mudou: reativar uma trilha ativa não é novidade.
+        if (estavaInativa) {
+            publisher.publishEvent(new TrilhaReativadaEvent(
+                    trilha.getId(), trilha.getTenant().getId(), requisitante.getId()));
+        }
+        return resposta;
     }
 
     private Area resolverArea(UUID areaId, UUID tenantId) {

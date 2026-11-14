@@ -2,6 +2,7 @@ package com.nexo.service;
 
 import com.nexo.dto.conteudo.ConteudoRequest;
 import com.nexo.entity.Conteudo;
+import com.nexo.entity.StatusConteudo;
 import com.nexo.entity.TipoConteudo;
 import com.nexo.exception.CampoInvalidoException;
 import com.nexo.service.video.VideoVimeo;
@@ -16,9 +17,11 @@ import org.springframework.stereotype.Component;
  *
  * <p>Cada tipo tem seu próprio método de montagem — {@link #video},
  * {@link #texto}, {@link #link} e {@link #documento} —, e todos limpam os campos dos outros tipos,
- * para um conteúdo que trocou de tipo não carregar material velho. É o único
- * lugar que cria um {@link Conteudo}: o service só completa tenant, título,
- * categoria e área.</p>
+ * para um conteúdo que trocou de tipo não carregar material velho. É por aqui
+ * que a API cria um {@link Conteudo}, já em rascunho; o service só completa
+ * tenant, autor, título, categoria e área. ({@link Conteudo#novoDocumento} é
+ * o atalho da entidade para montar um documento fora da API, como nos
+ * testes.)</p>
  */
 @Component
 public class ConteudoFactory {
@@ -32,6 +35,7 @@ public class ConteudoFactory {
     /** Conteúdo novo, em rascunho, com o material do tipo pedido. */
     public Conteudo criar(ConteudoRequest request) {
         Conteudo conteudo = new Conteudo();
+        conteudo.setStatus(StatusConteudo.RASCUNHO);
         aplicarMaterial(conteudo, request);
         return conteudo;
     }

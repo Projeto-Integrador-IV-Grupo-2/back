@@ -14,6 +14,7 @@ import com.nexo.dto.trilha.TrilhaDetalheResponse;
 import com.nexo.dto.trilha.TrilhaResumoResponse;
 import com.nexo.dto.trilha.AtualizarTrilhaRequest;
 import com.nexo.event.TrilhaInativadaEvent;
+import com.nexo.event.TrilhaReativadaEvent;
 import com.nexo.entity.Area;
 import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusAtribuicao;
@@ -369,6 +370,21 @@ class TrilhaServiceTest {
 
         assertThat(trilha.isAtivo()).isTrue();
         verify(publisher, never()).publishEvent(any(TrilhaInativadaEvent.class));
+        ArgumentCaptor<TrilhaReativadaEvent> evento = ArgumentCaptor.forClass(TrilhaReativadaEvent.class);
+        verify(publisher).publishEvent(evento.capture());
+        assertThat(evento.getValue().trilhaId()).isEqualTo(trilhaId);
+        assertThat(evento.getValue().reativadaPor()).isEqualTo(requisitante.getId());
+    }
+
+    @Test
+    void ativarUmaTrilhaJaAtivaNaoAnunciaNada() {
+        trilha.setAtivo(true);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaRepository.saveAndFlush(trilha)).thenReturn(trilha);
+
+        trilhaService.ativar(trilhaId, requisitante);
+
+        verify(publisher, never()).publishEvent(any());
     }
 
     private Tenant tenantComId() {

@@ -20,8 +20,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>Singleton do Spring, em memória e por instância da API: o pior caso de
  * várias instâncias é uma chamada a mais ao modelo, nunca uma sugestão
- * errada. Iniciar ou concluir uma trilha invalida a entrada do usuário — quem
- * faz isso é o {@code SugestoesDeTrilhaListener}.</p>
+ * errada. Iniciar ou concluir uma trilha invalida a entrada do usuário, e
+ * inativar ou reativar uma trilha invalida o tenant inteiro. Quem faz isso é
+ * o {@code SugestoesDeTrilhaListener}.</p>
  *
  * <p>A chave inclui o tenant: dois usuários de empresas diferentes nunca se
  * misturam, mesmo com ids repetidos.</p>
@@ -66,6 +67,15 @@ public class CacheDeSugestoes {
     /** Esquece a sugestão do usuário — o próximo acesso recalcula. */
     public void invalidar(UUID tenantId, UUID usuarioId) {
         entradas.remove(new Chave(tenantId, usuarioId));
+    }
+
+    /**
+     * Esquece as sugestões de todos os usuários do tenant. Usado quando muda o
+     * catálogo de candidatas (trilha inativada ou reativada), que vale para
+     * todos. Os outros tenants não são tocados.
+     */
+    public void invalidarTenant(UUID tenantId) {
+        entradas.keySet().removeIf(chave -> chave.tenantId().equals(tenantId));
     }
 
     /**

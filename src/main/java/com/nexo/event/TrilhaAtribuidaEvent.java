@@ -8,7 +8,10 @@ import java.util.UUID;
  *
  * <p>Publicado uma vez por lote, com apenas os usuários que realmente
  * receberam a atribuição — quem já tinha a trilha não entra, porque para ele
- * nada mudou. É o gancho natural para notificação, quando existir.</p>
+ * nada mudou. Publicado pelos dois caminhos que atribuem trilha: a
+ * atribuição em lote ({@code TrilhaAtribuicaoService}) e a ação de trilha do
+ * PDI ({@code AcaoDeTrilha}). Consumido pelo {@code NotificacoesListener},
+ * que avisa o colaborador.</p>
  *
  * @param trilhaId     trilha atribuída
  * @param tenantId     tenant dela

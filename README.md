@@ -225,8 +225,10 @@ senha com ele (`redefinir-senha`). O link aponta para
   `registro`: nada sai para fora; em dev, cada e-mail vira um arquivo em
   `./data/emails` (fora do Git), onde dá para abrir o link.
 - Depois da troca, um `SenhaRedefinidaEvent` faz os listeners mandarem o e-mail
-  "sua senha foi alterada" e registrarem `SENHA_REDEFINIDA` no histórico. Uma
-  rotina diária apaga links vencidos e pedidos antigos.
+  "sua senha foi alterada" e registrarem `SENHA_REDEFINIDA` no histórico. A
+  troca pela tela de perfil (`PATCH /api/auth/me/senha`) publica o
+  `SenhaTrocadaEvent`, que dispara o mesmo e-mail e o mesmo registro (com
+  `origem` diferente). Uma rotina diária apaga links vencidos e pedidos antigos.
 
 ### Administrador inicial
 
@@ -358,7 +360,8 @@ Filtros de `GET /api/trilhas`, todos opcionais e combináveis:
 5. O resultado fica guardado por usuário por `IA_SUGESTAO_VALIDADE`: dois
    acessos seguidos chamam o modelo uma vez só. Iniciar ou concluir uma trilha
    publica um evento que o `SugestoesDeTrilhaListener` usa para invalidar o
-   que estava guardado.
+   que estava guardado daquele usuário. Inativar ou reativar uma trilha
+   invalida o tenant inteiro, porque muda o catálogo de todos.
 6. **Com a IA fora do ar** — ou com uma resposta que não rendeu nenhuma trilha
    válida — a resposta continua **200**, com `geradoPorIa: false`, o `aviso`
    preenchido e a recomendação por área no lugar.
@@ -496,6 +499,22 @@ Toda chamada de IA passa pela interface `ClienteIa` (`com.nexo.ia`). Nenhuma
 outra parte do sistema conhece o provedor: trocar de provedor é escrever uma
 nova implementação e acrescentá-la na `ClienteIaFactory`, escolhida por
 `IA_PROVEDOR`.
+
+**Uso e custo.** O cliente escolhido pela fábrica é envolvido pelo
+`ClienteIaComRegistroDeUso`, que publica um `ChamadaIaRealizadaEvent` (modelo,
+tokens, duração, sucesso) a cada chamada. O `UsoDaIaListener` transforma isso
+em métricas do Micrometer. Hoje o Actuator só expõe `health` e `info`; para
+consultar em `/actuator/metrics`, inclua `metrics` em
+`management.endpoints.web.exposure.include` e proteja o endpoint no
+`SecurityConfig`, porque ele não deve ficar aberto.
+
+| Métrica | O que conta |
+|---|---|
+| `nexo.ia.chamadas` | quantidade e duração das chamadas, por `operacao` e `sucesso` |
+| `nexo.ia.tokens` | tokens cobrados, por `direcao` (`entrada`/`saida`) |
+| `nexo.ia.embeddings.textos` | textos enviados para embedding |
+
+O prompt e a resposta nunca entram no evento.
 
 | Critério | Google Gemini (escolhido) | OpenAI |
 |---|---|---|

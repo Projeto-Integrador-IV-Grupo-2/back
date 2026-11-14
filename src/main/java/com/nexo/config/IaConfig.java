@@ -1,8 +1,10 @@
 package com.nexo.config;
 
 import com.nexo.ia.ClienteIa;
+import com.nexo.ia.ClienteIaComRegistroDeUso;
 import com.nexo.ia.ClienteIaFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,8 +30,13 @@ public class IaConfig {
         return builder.requestFactory(requestFactory).build();
     }
 
+    /**
+     * A fábrica escolhe o provedor; o resultado é envolvido pelo
+     * {@link ClienteIaComRegistroDeUso}, que publica o uso de cada chamada.
+     */
     @Bean
-    public ClienteIa clienteIa(IaProperties properties, @Qualifier(REST_CLIENT) RestClient restClient) {
-        return ClienteIaFactory.criar(properties, restClient);
+    public ClienteIa clienteIa(IaProperties properties, @Qualifier(REST_CLIENT) RestClient restClient,
+                               ApplicationEventPublisher publisher) {
+        return new ClienteIaComRegistroDeUso(ClienteIaFactory.criar(properties, restClient), publisher, properties);
     }
 }

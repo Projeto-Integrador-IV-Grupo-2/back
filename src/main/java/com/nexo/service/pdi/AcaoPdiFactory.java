@@ -21,7 +21,12 @@ public class AcaoPdiFactory {
     private final Map<TipoAcaoPdi, CriadorDeAcao> criadores = new EnumMap<>(TipoAcaoPdi.class);
 
     public AcaoPdiFactory(List<CriadorDeAcao> criadores) {
-        criadores.forEach(criador -> criador.tipos().forEach(tipo -> this.criadores.put(tipo, criador)));
+        criadores.forEach(criador -> criador.tipos().forEach(tipo -> {
+            CriadorDeAcao anterior = this.criadores.putIfAbsent(tipo, criador);
+            if (anterior != null) {
+                throw new IllegalStateException("Dois criadores de ação para o tipo " + tipo);
+            }
+        }));
         for (TipoAcaoPdi tipo : TipoAcaoPdi.values()) {
             if (!this.criadores.containsKey(tipo)) {
                 throw new IllegalStateException("Nenhum criador de ação para o tipo " + tipo);

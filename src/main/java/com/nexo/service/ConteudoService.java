@@ -78,7 +78,6 @@ public class ConteudoService {
         Conteudo conteudo = conteudoFactory.criar(request);
         conteudo.setTenant(tenantRepository.getReferenceById(requisitante.getTenantId()));
         conteudo.setCriadoPor(usuarioRepository.getReferenceById(requisitante.getId()));
-        conteudo.setStatus(StatusConteudo.RASCUNHO);
         aplicarDados(conteudo, request, requisitante.getTenantId());
         return ConteudoResponse.de(conteudoRepository.saveAndFlush(conteudo));
     }

@@ -59,6 +59,12 @@ public class HistoricoInteracaoListener {
         tentarRegistrar("SENHA_REDEFINIDA", evento.usuarioId(), () -> historicoService.registrar(evento));
     }
 
+    /** Senha trocada pela tela de perfil. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void aoTrocarSenha(SenhaTrocadaEvent evento) {
+        tentarRegistrar("SENHA_TROCADA", evento.usuarioId(), () -> historicoService.registrar(evento));
+    }
+
     private void tentarRegistrar(String tipo, java.util.UUID referencia, Runnable gravacao) {
         try {
             gravacao.run();

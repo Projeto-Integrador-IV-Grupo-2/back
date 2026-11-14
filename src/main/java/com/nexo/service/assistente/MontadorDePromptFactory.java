@@ -18,7 +18,13 @@ public class MontadorDePromptFactory {
     private final Map<ContextoChat, MontadorDePrompt> porContexto = new EnumMap<>(ContextoChat.class);
 
     public MontadorDePromptFactory(List<MontadorDePrompt> montadores) {
-        montadores.forEach(montador -> porContexto.put(montador.contexto(), montador));
+        montadores.forEach(montador -> {
+            MontadorDePrompt anterior = porContexto.putIfAbsent(montador.contexto(), montador);
+            if (anterior != null) {
+                // Falha na subida: com dois, qual ganharia dependeria da ordem dos beans.
+                throw new IllegalStateException("Dois montadores de prompt para o contexto " + montador.contexto());
+            }
+        });
     }
 
     /** @throws OperacaoNaoPermitidaException contexto que ainda não aceita perguntas livres (409) */

@@ -19,7 +19,13 @@ public class EstrategiaRecomendacaoFactory {
             new EnumMap<>(CriterioRecomendacao.class);
 
     public EstrategiaRecomendacaoFactory(List<EstrategiaRecomendacao> disponiveis) {
-        disponiveis.forEach(estrategia -> estrategias.put(estrategia.criterio(), estrategia));
+        disponiveis.forEach(estrategia -> {
+            EstrategiaRecomendacao anterior = estrategias.putIfAbsent(estrategia.criterio(), estrategia);
+            if (anterior != null) {
+                // Falha na subida: com duas, qual ganharia dependeria da ordem dos beans.
+                throw new IllegalStateException("Duas estratégias de recomendação para " + estrategia.criterio());
+            }
+        });
     }
 
     public EstrategiaRecomendacao para(CriterioRecomendacao criterio) {

@@ -4,11 +4,13 @@ import com.nexo.dto.MeResponse;
 import com.nexo.dto.perfil.AtualizarPerfilRequest;
 import com.nexo.dto.perfil.TrocarSenhaRequest;
 import com.nexo.entity.Usuario;
+import com.nexo.event.SenhaTrocadaEvent;
 import com.nexo.exception.CampoInvalidoException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,10 +31,13 @@ public class PerfilService {
 
     private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher publisher;
 
-    public PerfilService(UsuarioRepository usuarioRepository, PasswordEncoder passwordEncoder) {
+    public PerfilService(UsuarioRepository usuarioRepository, PasswordEncoder passwordEncoder,
+                         ApplicationEventPublisher publisher) {
         this.usuarioRepository = usuarioRepository;
         this.passwordEncoder = passwordEncoder;
+        this.publisher = publisher;
     }
 
     /** Dados do usuário com área e empresa, como o login e o {@code GET /me} devolvem. */
@@ -60,6 +65,8 @@ public class PerfilService {
         atual.setSenhaHash(passwordEncoder.encode(request.novaSenha()));
         atual.incrementarVersaoSenha();
         usuarioRepository.save(atual);
+        // Observer: e-mail de segurança e histórico saem depois do commit, pelos listeners.
+        publisher.publishEvent(new SenhaTrocadaEvent(usuario.getTenantId(), usuario.getId()));
     }
 
     private Usuario buscar(UUID usuarioId, UUID tenantId) {

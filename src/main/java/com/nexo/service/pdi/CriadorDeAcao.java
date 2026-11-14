@@ -8,8 +8,9 @@ import com.nexo.security.UsuarioAutenticado;
 import java.util.Set;
 
 /**
- * Produto concreto do Factory Method de ações do PDI: cada implementação sabe
- * criar as ações de alguns tipos. Escolhida por {@link AcaoPdiFactory}.
+ * Criador do Factory Method de ações do PDI: cada implementação é um criador
+ * concreto, que sabe montar a {@link com.nexo.entity.PdiAcao} (o produto) de
+ * alguns tipos. Quem escolhe o criador é a {@link AcaoPdiFactory}.
  */
 public interface CriadorDeAcao {
 

@@ -7,6 +7,7 @@ import com.nexo.entity.TipoInteracaoHistorico;
 import com.nexo.entity.Usuario;
 import com.nexo.event.PerguntaRespondidaEvent;
 import com.nexo.event.SenhaRedefinidaEvent;
+import com.nexo.event.SenhaTrocadaEvent;
 import com.nexo.event.TrilhaAcessadaEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.event.TrilhaIniciadaEvent;
@@ -82,6 +83,19 @@ public class HistoricoInteracaoFactory {
         historico.setUsuario(usuarioRepository.getReferenceById(evento.usuarioId()));
         historico.setTipo(TipoInteracaoHistorico.SENHA_REDEFINIDA);
         historico.setDetalhes(Map.of("origem", "POST /api/auth/redefinir-senha"));
+        return historico;
+    }
+
+    /**
+     * Senha trocada pela tela de perfil. Mesmo tipo da redefinição pelo link:
+     * para a auditoria, nos dois casos a senha mudou. A origem diferencia.
+     */
+    public HistoricoInteracao para(SenhaTrocadaEvent evento) {
+        HistoricoInteracao historico = new HistoricoInteracao();
+        historico.setTenant(tenantRepository.getReferenceById(evento.tenantId()));
+        historico.setUsuario(usuarioRepository.getReferenceById(evento.usuarioId()));
+        historico.setTipo(TipoInteracaoHistorico.SENHA_REDEFINIDA);
+        historico.setDetalhes(Map.of("origem", "PATCH /api/auth/me/senha"));
         return historico;
     }
 

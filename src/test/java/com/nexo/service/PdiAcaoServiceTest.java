@@ -23,6 +23,7 @@ import com.nexo.entity.TipoCompetencia;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
+import com.nexo.event.TrilhaAtribuidaEvent;
 import com.nexo.event.TrilhaConcluidaEvent;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
@@ -46,6 +47,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -75,6 +77,9 @@ class PdiAcaoServiceTest {
     @Mock
     private UsuarioRepository usuarioRepository;
 
+    @Mock
+    private ApplicationEventPublisher publisher;
+
     private PdiAcaoService pdiAcaoService;
 
     private Tenant tenant;
@@ -88,8 +93,7 @@ class PdiAcaoServiceTest {
     @BeforeEach
     void setUp() {
         AcaoPdiFactory factory = new AcaoPdiFactory(List.of(
-                new AcaoDeTrilha(trilhaRepository, trilhaAtribuicaoRepository, usuarioRepository,
-                        org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class)),
+                new AcaoDeTrilha(trilhaRepository, trilhaAtribuicaoRepository, usuarioRepository, publisher),
                 new AcaoDescritiva()));
         pdiAcaoService = new PdiAcaoService(pdiService, pdiItemRepository, pdiAcaoRepository,
                 trilhaAtribuicaoRepository, factory);
@@ -135,6 +139,9 @@ class PdiAcaoServiceTest {
         assertThat(atribuicao.getValue().getAtribuidoPor()).isEqualTo(gestor);
         assertThat(atribuicao.getValue().getPrazo()).isEqualTo(PRAZO);
         assertThat(atribuicao.getValue().getStatus()).isEqualTo(StatusAtribuicao.NAO_INICIADA);
+        assertThat(atribuicao.getValue().getTenant()).isEqualTo(tenant);
+        verify(publisher).publishEvent(new TrilhaAtribuidaEvent(
+                trilha.getId(), tenant.getId(), List.of(colaborador.getId()), gestor.getId()));
 
         assertThat(response.tipo()).isEqualTo(TipoAcaoPdi.TRILHA);
         assertThat(response.trilha().id()).isEqualTo(trilha.getId());
@@ -155,6 +162,7 @@ class PdiAcaoServiceTest {
                 new PdiAcaoRequest(TipoAcaoPdi.TRILHA, trilha.getId(), PRAZO, null), requisitante);
 
         verify(trilhaAtribuicaoRepository, never()).saveAndFlush(any());
+        verify(publisher, never()).publishEvent(any());
         assertThat(response.status()).isEqualTo(StatusAcaoPdi.PENDENTE);
         assertThat(response.progressoTrilha().status()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
     }

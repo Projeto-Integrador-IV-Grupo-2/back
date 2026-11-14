@@ -5,9 +5,12 @@ import java.util.UUID;
 /**
  * Uma trilha foi inativada e sai do catálogo dos colaboradores.
  *
- * <p>Publicado via {@code ApplicationEventPublisher}. Hoje nenhum listener
- * consome: o evento é o ponto de extensão para quem precisar reagir (avisar
- * quem tinha a trilha em andamento, por exemplo) sem acoplar isso ao service.</p>
+ * <p>Publicado pelo {@code TrilhaService}, só quando a trilha estava ativa.
+ * Consumido pelo {@link SugestoesDeTrilhaListener}, que descarta as sugestões
+ * guardadas do tenant para a trilha não continuar sendo sugerida, e pelo
+ * {@code NotificacoesListener}, que avisa quem tinha a trilha. Como só é
+ * publicado na mudança, inativar de novo não repete o aviso. O par dele é o
+ * {@link TrilhaReativadaEvent}.</p>
  *
  * @param trilhaId    trilha inativada
  * @param tenantId    tenant dela

@@ -4,6 +4,7 @@ import com.nexo.config.EmailProperties;
 import com.nexo.config.SenhaProperties;
 import com.nexo.event.RedefinicaoSenhaSolicitadaEvent;
 import com.nexo.event.SenhaRedefinidaEvent;
+import com.nexo.event.SenhaTrocadaEvent;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.service.email.EmailMensagem;
 import com.nexo.service.email.EnviadorDeEmail;
@@ -60,13 +61,24 @@ public class EmailsDeSenhaListener {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void aoRedefinirSenha(SenhaRedefinidaEvent evento) {
-        usuarioRepository.findById(evento.usuarioId()).ifPresent(usuario -> enviar(new EmailMensagem(
+        avisarSenhaAlterada(evento.usuarioId(), "pelo link de redefinição");
+    }
+
+    /** Troca pela tela de perfil: o mesmo aviso de segurança, com a origem certa. */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void aoTrocarSenha(SenhaTrocadaEvent evento) {
+        avisarSenhaAlterada(evento.usuarioId(), "na tela de perfil");
+    }
+
+    private void avisarSenhaAlterada(java.util.UUID usuarioId, String como) {
+        usuarioRepository.findById(usuarioId).ifPresent(usuario -> enviar(new EmailMensagem(
                 usuario.getEmail(),
                 "Sua senha do Nexo foi alterada",
                 "Olá, " + usuario.getNomeCompleto() + ".\n\n"
-                        + "A senha da sua conta no Nexo acabou de ser alterada pelo link de redefinição.\n"
+                        + "A senha da sua conta no Nexo acabou de ser alterada " + como + ".\n"
                         + "Se não foi você, procure o administrador da sua empresa imediatamente."),
-                evento.usuarioId()));
+                usuarioId));
     }
 
     private void enviar(EmailMensagem mensagem, java.util.UUID usuarioId) {

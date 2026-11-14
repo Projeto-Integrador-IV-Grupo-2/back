@@ -15,7 +15,7 @@ public final class ClienteIaFactory {
     }
 
     public static ClienteIa criar(IaProperties properties, RestClient restClient) {
-        String provedor = properties.provedor().toLowerCase(Locale.ROOT);
+        String provedor = properties.provedor().trim().toLowerCase(Locale.ROOT);
         return switch (provedor) {
             case "gemini" -> new GeminiClienteIa(restClient, properties);
             case "fake" -> new ClienteIaFake(properties.dimensoes());

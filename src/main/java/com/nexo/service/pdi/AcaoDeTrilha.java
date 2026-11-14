@@ -32,6 +32,10 @@ import org.springframework.stereotype.Component;
  * está — não muda prazo nem status de um progresso em curso. Se essa
  * atribuição já está concluída, a ação já nasce concluída: o colaborador não
  * precisa refazer a trilha para o PDI reconhecê-la.</p>
+ *
+ * <p><strong>Observer:</strong> quando a ação cria uma atribuição nova, publica
+ * {@link TrilhaAtribuidaEvent}, o mesmo aviso da atribuição feita pela tela de
+ * trilhas. Quem escuta não precisa saber por onde a trilha chegou.</p>
  */
 @Component
 public class AcaoDeTrilha implements CriadorDeAcao {
@@ -77,20 +81,14 @@ public class AcaoDeTrilha implements CriadorDeAcao {
 
     private TrilhaAtribuicao atribuir(Trilha trilha, Usuario colaborador, PdiAcaoRequest request,
                                       UsuarioAutenticado requisitante) {
-        TrilhaAtribuicao atribuicao = new TrilhaAtribuicao();
-        atribuicao.setTenant(trilha.getTenant());
-        atribuicao.setTrilha(trilha);
-        atribuicao.setUsuario(colaborador);
-        atribuicao.setAtribuidoPor(usuarioRepository.getReferenceById(requisitante.getId()));
-        atribuicao.setPrazo(request.prazo());
-        // Atribuída pelo gestor: o colaborador ainda não começou.
-        atribuicao.setStatus(StatusAtribuicao.NAO_INICIADA);
-        TrilhaAtribuicao gravada = trilhaAtribuicaoRepository.saveAndFlush(atribuicao);
-        // Atribuir pelo PDI também é atribuir: quem escuta (ex.: notificações)
-        // trata igual à atribuição pela tela de trilhas.
+        // Atribuída pelo gestor: o colaborador ainda não começou. Mesmo Factory
+        // Method da atribuição pela tela de trilhas, para nenhum campo faltar.
+        TrilhaAtribuicao atribuicao = trilhaAtribuicaoRepository.saveAndFlush(TrilhaAtribuicao.nova(
+                trilha, colaborador, usuarioRepository.getReferenceById(requisitante.getId()),
+                request.prazo(), StatusAtribuicao.NAO_INICIADA));
         publisher.publishEvent(new TrilhaAtribuidaEvent(
                 trilha.getId(), trilha.getTenant().getId(), List.of(colaborador.getId()), requisitante.getId()));
-        return gravada;
+        return atribuicao;
     }
 
     private Trilha buscarTrilhaAtivaNoTenant(PdiAcaoRequest request, UsuarioAutenticado requisitante) {

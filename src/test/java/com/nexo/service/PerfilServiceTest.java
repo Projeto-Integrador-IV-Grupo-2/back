@@ -14,6 +14,7 @@ import com.nexo.entity.Area;
 import com.nexo.entity.Perfil;
 import com.nexo.entity.Tenant;
 import com.nexo.entity.Usuario;
+import com.nexo.event.SenhaTrocadaEvent;
 import com.nexo.exception.CampoInvalidoException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.UsuarioRepository;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,6 +39,9 @@ class PerfilServiceTest {
     @Mock
     private UsuarioRepository usuarioRepository;
 
+    @Mock
+    private ApplicationEventPublisher publisher;
+
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
     private PerfilService service;
     private Tenant tenant;
@@ -45,7 +50,7 @@ class PerfilServiceTest {
 
     @BeforeEach
     void prepara() {
-        service = new PerfilService(usuarioRepository, passwordEncoder);
+        service = new PerfilService(usuarioRepository, passwordEncoder, publisher);
 
         tenant = new Tenant();
         ReflectionTestUtils.setField(tenant, "id", UUID.randomUUID());
@@ -114,6 +119,7 @@ class PerfilServiceTest {
         assertThat(passwordEncoder.matches(SENHA_ATUAL, usuario.getSenhaHash())).isFalse();
         assertThat(usuario.getVersaoSenha()).isEqualTo(1);
         verify(usuarioRepository).save(usuario);
+        verify(publisher).publishEvent(new SenhaTrocadaEvent(autenticado.getTenantId(), autenticado.getId()));
     }
 
     @Test
@@ -126,6 +132,7 @@ class PerfilServiceTest {
                 .hasFieldOrPropertyWithValue("campo", "senhaAtual");
         assertThat(usuario.getSenhaHash()).isEqualTo(hashAntes);
         verify(usuarioRepository, never()).save(any());
+        verify(publisher, never()).publishEvent(any());
     }
 
     @Test

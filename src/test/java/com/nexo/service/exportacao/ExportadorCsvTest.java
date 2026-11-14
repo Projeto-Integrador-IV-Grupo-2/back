@@ -52,6 +52,21 @@ class ExportadorCsvTest {
         assertThatThrownBy(() -> fabrica.para("pdf")).isInstanceOf(ParametroInvalidoException.class);
     }
 
+    @Test
+    void fabricaAchaExportadorQueDeclaraOFormatoEmMaiusculas() {
+        ExportadorAcompanhamento emMaiusculas = org.mockito.Mockito.mock(ExportadorAcompanhamento.class);
+        org.mockito.Mockito.when(emMaiusculas.formato()).thenReturn("XLSX");
+
+        assertThat(new ExportadorFactory(List.of(emMaiusculas)).para("xlsx")).isSameAs(emMaiusculas);
+    }
+
+    @Test
+    void doisExportadoresParaOMesmoFormatoImpedemASubida() {
+        assertThatThrownBy(() -> new ExportadorFactory(List.of(exportador, new ExportadorCsv())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("csv");
+    }
+
     private static AtribuicaoAcompanhamentoResponse linha(String colaborador, String trilha, StatusAtribuicao status) {
         return new AtribuicaoAcompanhamentoResponse(
                 UUID.randomUUID(),

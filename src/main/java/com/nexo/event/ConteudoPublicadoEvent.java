@@ -5,9 +5,10 @@ import java.util.UUID;
 /**
  * Um conteúdo saiu de rascunho e ficou visível para os colaboradores.
  *
- * <p>Publicado via {@code ApplicationEventPublisher}. Hoje nenhum listener
- * consome: é o ponto de extensão para notificar quem estuda a área do
- * conteúdo, sem acoplar isso ao {@code ConteudoService}.</p>
+ * <p>Publicado pelo {@code ConteudoService}. Consumido pelo
+ * {@code IndexadorDeConteudoListener}, que indexa o conteúdo para o assistente
+ * de IA depois do commit, e pelo {@code NotificacoesListener}, que avisa os
+ * colaboradores da área. O service não conhece nenhum dos dois.</p>
  *
  * @param conteudoId   conteúdo publicado
  * @param tenantId     tenant dele
