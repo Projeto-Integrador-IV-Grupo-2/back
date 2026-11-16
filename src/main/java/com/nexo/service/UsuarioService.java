@@ -115,6 +115,10 @@ public class UsuarioService {
     @Transactional
     public UsuarioResponse atualizar(UUID id, AtualizarUsuarioRequest request, UsuarioAutenticado requisitante) {
         Usuario usuario = buscarEntidadeNoTenant(id, requisitante);
+        if (requisitante.getId().equals(usuario.getId()) && request.papel() != usuario.getPapel()) {
+            // Mesmo motivo de não poder se desativar: o tenant ficaria sem ninguém para administrar.
+            throw new OperacaoNaoPermitidaException("Um administrador não pode mudar o próprio perfil");
+        }
         usuario.setNomeCompleto(request.nomeCompleto().trim());
         usuario.setCargo(resolverCargo(request.cargoId(), usuario.getTenant()));
         usuario.setArea(resolverArea(request.areaId(), usuario.getTenant()));
