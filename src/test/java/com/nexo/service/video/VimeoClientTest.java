@@ -31,7 +31,7 @@ class VimeoClientTest {
     void prepara() {
         RestClient.Builder builder = RestClient.builder();
         servidor = MockRestServiceServer.bindTo(builder).build();
-        cliente = new VimeoClient(builder.build(), new VimeoProperties(OEMBED, Duration.ofSeconds(1)));
+        cliente = new VimeoClient(builder.build(), new VimeoProperties(OEMBED, Duration.ofSeconds(1), "https://nexo.test"));
     }
 
     /** O link vai codificado no parâmetro {@code url}, como o Vimeo espera. */
@@ -69,7 +69,7 @@ class VimeoClientTest {
 
         assertThatThrownBy(() -> cliente.consultar("https://vimeo.com/1"))
                 .isInstanceOf(CampoInvalidoException.class)
-                .hasMessage("Vídeo não encontrado no Vimeo")
+                .hasMessageStartingWith("Vídeo não encontrado no Vimeo")
                 .extracting("campo").isEqualTo("videoUrl");
     }
 
@@ -97,6 +97,52 @@ class VimeoClientTest {
         servidor.expect(requestTo(oembedDe("3"))).andRespond(withServerError());
 
         assertThatThrownBy(() -> cliente.consultar("https://vimeo.com/3"))
+                .isInstanceOf(ServicoExternoIndisponivelException.class);
+    }
+
+    @Test
+    void gravaOLinkCanonicoMesmoQuandoOLinkColadoTemOutroFormato() {
+        servidor.expect(requestTo(OEMBED + "?url=https%3A%2F%2Fvimeo.com%2Fchannels%2Fstaffpicks%2F76979871"))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers
+                        .header("Referer", "https://nexo.test"))
+                .andRespond(withSuccess("""
+                        {"type":"video","duration":62,"video_id":76979871,
+                         "html":"<iframe src=\\"https://player.vimeo.com/video/76979871?app_id=122963\\"></iframe>"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.consultar("https://vimeo.com/channels/staffpicks/76979871").link())
+                .isEqualTo("https://vimeo.com/76979871");
+        servidor.verify();
+    }
+
+    @Test
+    void videoNaoListadoMantemOHashNoLinkCanonico() {
+        servidor.expect(requestTo(OEMBED + "?url=https%3A%2F%2Fplayer.vimeo.com%2Fvideo%2F123%3Fh%3Dabc123def0"))
+                .andRespond(withSuccess("""
+                        {"type":"video","video_id":123,
+                         "html":"<iframe src=\\"https://player.vimeo.com/video/123?h=abc123def0&amp;app_id=1\\"></iframe>"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.consultar("https://player.vimeo.com/video/123?h=abc123def0").link())
+                .isEqualTo("https://vimeo.com/123/abc123def0");
+    }
+
+    @Test
+    void hashDoLinkColadoValeQuandoOVimeoNaoDevolveOIframe() {
+        servidor.expect(requestTo(OEMBED + "?url=https%3A%2F%2Fvimeo.com%2F123%2Fabc123def0"))
+                .andRespond(withSuccess("{\"type\":\"video\",\"video_id\":123}", MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.consultar("https://vimeo.com/123/abc123def0").link())
+                .isEqualTo("https://vimeo.com/123/abc123def0");
+    }
+
+    @Test
+    void limiteDeConsultasDoVimeoNaoCulpaOLink() {
+        servidor.expect(requestTo(oembedDe("5")))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withStatus(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS));
+
+        assertThatThrownBy(() -> cliente.consultar("https://vimeo.com/5"))
                 .isInstanceOf(ServicoExternoIndisponivelException.class);
     }
 }

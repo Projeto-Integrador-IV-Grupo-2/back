@@ -61,7 +61,8 @@ public class ConteudoFactory {
                 && Objects.equals(conteudo.getVideoUrl(), link);
         if (!mesmoVideo) {
             VideoVimeo video = vimeoClient.consultar(link);
-            conteudo.setVideoUrl(link);
+            // Grava o formato que o player entende, não o que foi colado.
+            conteudo.setVideoUrl(video.link() == null ? link : video.link());
             conteudo.setDuracaoSegundos(video.duracaoSegundos());
             conteudo.setMiniaturaUrl(video.miniaturaUrl());
         }
