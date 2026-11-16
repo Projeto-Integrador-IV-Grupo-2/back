@@ -101,6 +101,9 @@ app:
   vimeo:
     oembed-url: ${VIMEO_OEMBED_URL:https://vimeo.com/api/oembed.json}
     timeout: ${VIMEO_TIMEOUT:PT5S}
+    # Vídeo com incorporação restrita a domínios só passa no oEmbed quando o
+    # pedido leva o Referer de um domínio liberado no Vimeo: o do front.
+    referer: ${VIMEO_REFERER:${FRONT_URL:http://localhost:5173}}
 
   # ---- Assistente de IA (Google Gemini) ----
   # Sem IA_API_KEY a aplicação sobe normalmente; só as rotas de IA respondem 503.
@@ -109,9 +112,12 @@ app:
     api-key: ${IA_API_KEY:}
     url-base: ${IA_URL_BASE:https://generativelanguage.googleapis.com/v1beta}
     modelo: ${IA_MODELO:gemini-flash-latest}           # alias do Flash atual: o 2.5 saiu para contas novas
+    # Tentados na ordem quando o principal está sobrecarregado, estoura o
+    # timeout ou foi aposentado (separados por vírgula; vazio desliga).
+    modelos-reserva: ${IA_MODELOS_RESERVA:gemini-flash-lite-latest}
     modelo-embedding: ${IA_MODELO_EMBEDDING:gemini-embedding-001}
     dimensoes: 768                              # fixo: é o tamanho da coluna vector(768) da V14
-    timeout: ${IA_TIMEOUT:PT60S}                 # o Flash atual raciocina antes de responder
+    timeout: ${IA_TIMEOUT:PT30S}                 # por modelo; depois disso o reserva assume
     max-tentativas: ${IA_MAX_TENTATIVAS:3}
     indexacao:
       tamanho-trecho: ${IA_TAMANHO_TRECHO:1000}
@@ -120,7 +126,9 @@ app:
       intervalo-nova-tentativa: ${IA_INDEXACAO_INTERVALO:PT5M}
     busca:
       trechos: ${IA_BUSCA_TRECHOS:5}
-      distancia-maxima: ${IA_BUSCA_DISTANCIA_MAXIMA:0.6}
+      # Medido com o gemini-embedding-001: trecho que responde a pergunta fica
+      # entre 0,20 e 0,35; assunto sem relação, acima de 0,45.
+      distancia-maxima: ${IA_BUSCA_DISTANCIA_MAXIMA:0.45}
     consulta:
       perguntas-por-minuto: ${IA_PERGUNTAS_POR_MINUTO:10}
       mensagens-historico: ${IA_MENSAGENS_HISTORICO:6}
@@ -228,6 +236,9 @@ app:
   # Os testes nunca chamam o provedor real: o ClienteIaFake gera embeddings e respostas determinísticos.
   ia:
     provedor: fake
+    # O embedding fake (saco de palavras) tem outra escala de distância.
+    busca:
+      distancia-maxima: 0.6
   # Cada execução de testes grava numa pasta temporária, nunca no projeto.
   armazenamento:
     diretorio: ${java.io.tmpdir}/nexo-arquivos-teste

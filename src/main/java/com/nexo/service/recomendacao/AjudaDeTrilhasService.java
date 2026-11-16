@@ -2,9 +2,11 @@ package com.nexo.service.recomendacao;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexo.dto.trilha.AjudaTrilhasResponse;
+import com.nexo.config.IaProperties;
 import com.nexo.ia.ClienteIa;
 import com.nexo.ia.MensagemIa;
 import com.nexo.security.UsuarioAutenticado;
+import com.nexo.service.assistente.LimitePerguntasService;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Service;
  *
  * <p>O rascunho nunca é gravado: quem cria a trilha revisa no formulário e
  * salva pelo {@code POST /api/trilhas} de sempre, com as validações dele.
+ * Os pedidos contam na mesma cota por minuto do assistente (429 acima dela).
  * Com a IA fora do ar, a {@link com.nexo.exception.IaIndisponivelException}
  * sobe e a API responde 503.</p>
  *
@@ -36,9 +39,14 @@ public class AjudaDeTrilhasService {
     private final ColetorDeConteudos coletorDeConteudos;
     private final ClienteIa clienteIa;
     private final ObjectMapper objectMapper;
+    private final LimitePerguntasService limitePerguntasService;
+    private final int perguntasPorMinuto;
 
     public AjudaDeTrilhasService(ColetorDeDadosDaSugestao coletor, ColetorDeConteudos coletorDeConteudos,
-                                 ClienteIa clienteIa, ObjectMapper objectMapper) {
+                                 ClienteIa clienteIa, ObjectMapper objectMapper,
+                                 LimitePerguntasService limitePerguntasService, IaProperties properties) {
+        this.limitePerguntasService = limitePerguntasService;
+        this.perguntasPorMinuto = properties.consulta().perguntasPorMinuto();
         this.coletor = coletor;
         this.coletorDeConteudos = coletorDeConteudos;
         this.clienteIa = clienteIa;
@@ -46,6 +54,8 @@ public class AjudaDeTrilhasService {
     }
 
     public AjudaTrilhasResponse ajudar(String pergunta, UsuarioAutenticado requisitante) {
+        // Mesma cota do assistente: cada pedido aqui também é uma chamada paga ao modelo.
+        limitePerguntasService.reservar(requisitante.getTenantId(), requisitante.getId(), perguntasPorMinuto);
         // Os dois coletores leem em transações curtas, que fecham antes do modelo.
         DadosParaSugestao dados = coletor.coletar(requisitante);
         List<ConteudoCandidato> conteudos = coletorDeConteudos.publicados(requisitante.getTenantId());

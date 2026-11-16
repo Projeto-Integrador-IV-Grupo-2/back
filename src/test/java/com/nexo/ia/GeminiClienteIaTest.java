@@ -36,7 +36,17 @@ class GeminiClienteIaTest {
              "usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":5}}
             """;
 
+    private static final String GERAR_RESERVA = BASE + "/models/gemini-reserva:generateContent";
+
     private MockRestServiceServer servidor;
+
+    private GeminiClienteIa clienteComReserva(int maxTentativas) {
+        RestClient.Builder builder = RestClient.builder();
+        servidor = MockRestServiceServer.bindTo(builder).build();
+        IaProperties properties = new IaProperties("gemini", "chave", BASE, "gemini-teste", "embedding-teste", 3,
+                Duration.ofSeconds(1), maxTentativas, null, null, null, null, List.of("gemini-reserva"));
+        return new GeminiClienteIa(builder.build(), properties, Duration.ZERO);
+    }
 
     private GeminiClienteIa cliente(String chave, int maxTentativas) {
         RestClient.Builder builder = RestClient.builder();
@@ -163,5 +173,57 @@ class GeminiClienteIaTest {
 
         assertThatThrownBy(() -> cliente.gerarEmbedding("pergunta", FinalidadeEmbedding.CONSULTA))
                 .isInstanceOf(IaIndisponivelException.class);
+    }
+
+    @Test
+    void modeloSobrecarregadoPassaAVezParaOReserva() {
+        GeminiClienteIa cliente = clienteComReserva(3);
+        servidor.expect(requestTo(GERAR)).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        servidor.expect(requestTo(GERAR_RESERVA)).andRespond(withSuccess(RESPOSTA_OK, MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.gerarResposta("s", List.of(MensagemIa.doUsuario("p"))).texto()).isNotBlank();
+        servidor.verify();
+    }
+
+    @Test
+    void modeloAposentadoPassaAVezParaOReserva() {
+        GeminiClienteIa cliente = clienteComReserva(3);
+        servidor.expect(requestTo(GERAR)).andRespond(withStatus(HttpStatus.NOT_FOUND));
+        servidor.expect(requestTo(GERAR_RESERVA)).andRespond(withSuccess(RESPOSTA_OK, MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.gerarResposta("s", List.of(MensagemIa.doUsuario("p"))).texto()).isNotBlank();
+        servidor.verify();
+    }
+
+    @Test
+    void modeloQueEstourouOTimeoutNaoEhTentadoDeNovoQuandoHaReserva() {
+        GeminiClienteIa cliente = clienteComReserva(3);
+        servidor.expect(times(1), requestTo(GERAR)).andRespond(withException(new SocketTimeoutException("lento")));
+        servidor.expect(requestTo(GERAR_RESERVA)).andRespond(withServerError());
+        servidor.expect(requestTo(GERAR_RESERVA)).andRespond(withSuccess(RESPOSTA_OK, MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.gerarResposta("s", List.of(MensagemIa.doUsuario("p"))).texto()).isNotBlank();
+        servidor.verify();
+    }
+
+    @Test
+    void modeloUnicoAposentadoFalhaNaHoraPedindoParaConferirAConfiguracao() {
+        GeminiClienteIa cliente = cliente("chave", 3);
+        servidor.expect(times(1), requestTo(GERAR)).andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertThatThrownBy(() -> cliente.gerarResposta("s", List.of(MensagemIa.doUsuario("p"))))
+                .isInstanceOf(IaIndisponivelException.class)
+                .hasMessageContaining("configuração");
+        servidor.verify();
+    }
+
+    @Test
+    void embeddingsNuncaTrocamDeModelo() {
+        GeminiClienteIa cliente = clienteComReserva(2);
+        servidor.expect(times(2), requestTo(EMBEDDINGS)).andRespond(withServerError());
+
+        assertThatThrownBy(() -> cliente.gerarEmbedding("pergunta", FinalidadeEmbedding.CONSULTA))
+                .isInstanceOf(IaIndisponivelException.class);
+        servidor.verify();
     }
 }

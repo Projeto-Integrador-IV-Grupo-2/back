@@ -14,12 +14,16 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -46,6 +50,12 @@ public class IndexacaoService {
 
     /** Teto da espera entre tentativas, para o backoff exponencial não crescer sem fim. */
     private static final Duration ESPERA_MAXIMA = Duration.ofHours(6);
+
+    /** Tempo que a rotina dá ao indexador disparado pela publicação antes de assumir o conteúdo. */
+    private static final Duration FOLGA_DO_INDEXADOR = Duration.ofMinutes(2);
+
+    /** Quantos conteúdos atrasados a rotina pega por rodada. */
+    private static final Pageable LOTE = PageRequest.of(0, 25);
 
     private final ConteudoRepository conteudoRepository;
     private final ConteudoChunkRepository chunkRepository;
@@ -79,6 +89,11 @@ public class IndexacaoService {
 
     /** Indexa (ou reindexa) o conteúdo. Conteúdo que não está publicado tem os trechos removidos. */
     public void indexar(UUID conteudoId) {
+        if (!clienteIa.disponivel()) {
+            // Sem chave não há o que tentar: o conteúdo fica sem registro e a
+            // rotina o indexa quando a IA for configurada.
+            return;
+        }
         Material material = null;
         try {
             material = transacao.execute(status -> lerMaterial(conteudoId));
@@ -112,14 +127,27 @@ public class IndexacaoService {
         }
     }
 
-    /** Tenta de novo as falhas cuja hora chegou. Devolve quantas foram reprocessadas. */
+    /**
+     * Tenta de novo as falhas cuja hora chegou e indexa o que ficou para trás:
+     * conteúdo publicado que nunca foi indexado (publicado antes de a IA ser
+     * configurada, por exemplo) e falhas que esgotaram as tentativas há mais
+     * de {@link #ESPERA_MAXIMA}. Devolve quantos conteúdos foram processados.
+     */
     public int reprocessarFalhas() {
-        List<UUID> pendentes = transacao.execute(status -> indexacaoRepository
-                .findByStatusAndTentativasLessThanAndProximaTentativaEmLessThanEqual(
-                        StatusIndexacao.FALHOU, config.maxTentativas(), agora())
-                .stream()
-                .map(IndexacaoConteudo::getConteudoId)
-                .toList());
+        if (!clienteIa.disponivel()) {
+            return 0;
+        }
+        OffsetDateTime agora = agora();
+        List<UUID> pendentes = transacao.execute(status -> {
+            Set<UUID> ids = new LinkedHashSet<>();
+            indexacaoRepository
+                    .findByStatusAndTentativasLessThanAndProximaTentativaEmLessThanEqual(
+                            StatusIndexacao.FALHOU, config.maxTentativas(), agora)
+                    .forEach(falha -> ids.add(falha.getConteudoId()));
+            ids.addAll(indexacaoRepository.idsDeFalhasAbandonadasDesde(agora.minus(ESPERA_MAXIMA), LOTE));
+            ids.addAll(conteudoRepository.idsPublicadosSemIndexacao(agora.minus(FOLGA_DO_INDEXADOR), LOTE));
+            return List.copyOf(ids);
+        });
         pendentes.forEach(this::indexar);
         return pendentes.size();
     }

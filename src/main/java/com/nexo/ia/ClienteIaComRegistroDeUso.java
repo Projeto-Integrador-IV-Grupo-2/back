@@ -35,6 +35,11 @@ public class ClienteIaComRegistroDeUso implements ClienteIa {
     }
 
     @Override
+    public boolean disponivel() {
+        return cliente.disponivel();
+    }
+
+    @Override
     public RespostaIa gerarResposta(String promptSistema, List<MensagemIa> mensagens) {
         long inicio = System.nanoTime();
         try {
