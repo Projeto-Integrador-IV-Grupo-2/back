@@ -17,6 +17,7 @@ import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusPdi;
 import com.nexo.entity.Usuario;
 import com.nexo.exception.OperacaoNaoPermitidaException;
+import com.nexo.exception.CampoInvalidoException;
 import com.nexo.exception.ResourceNotFoundException;
 import com.nexo.repository.PdiAcaoRepository;
 import com.nexo.repository.PdiItemRepository;
@@ -79,6 +80,14 @@ public class PdiService {
                 .filter(usuario -> usuario.getTenant().getId().equals(requisitante.getTenantId()))
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Colaborador não encontrado: " + request.colaboradorId()));
+        if (colaborador.getPapel() != Perfil.COLABORADOR) {
+            throw new OperacaoNaoPermitidaException(
+                    "O PDI é do colaborador; " + colaborador.getNomeCompleto() + " tem perfil de gestão");
+        }
+        if (!colaborador.isAtivo()) {
+            throw new OperacaoNaoPermitidaException(
+                    "Usuário inativo não pode receber PDI: " + colaborador.getNomeCompleto());
+        }
         if (request.fim().isBefore(request.inicio())) {
             throw new OperacaoNaoPermitidaException("O fim do ciclo não pode ser antes do início");
         }
@@ -109,8 +118,8 @@ public class PdiService {
                                                               UsuarioAutenticado requisitante) {
         String trecho = nome == null ? "" : nome.trim();
         return usuarioRepository
-                .findByTenantIdAndAtivoTrueAndNomeCompletoContainingIgnoreCase(
-                        requisitante.getTenantId(), trecho, pageable)
+                .findByTenantIdAndAtivoTrueAndPapelAndNomeCompletoContainingIgnoreCase(
+                        requisitante.getTenantId(), Perfil.COLABORADOR, trecho, pageable)
                 .map(ColaboradorOpcaoResponse::de);
     }
 
@@ -169,7 +178,10 @@ public class PdiService {
     /** Inclui uma competência no PDI. Competência repetida no mesmo PDI é erro de negócio. */
     @Transactional
     public PdiItemResponse adicionarItem(UUID pdiId, PdiItemRequest request, UsuarioAutenticado requisitante) {
-        Pdi pdi = buscarGerenciavel(pdiId, requisitante);
+        Pdi pdi = buscarEditavel(pdiId, requisitante);
+        if (request.nivelAlvo() < request.nivelAtual()) {
+            throw new CampoInvalidoException("nivelAlvo", "O nível alvo não pode ser menor que o nível atual");
+        }
         Competencia competencia = competenciaService.buscarNoTenant(request.competenciaId(),
                 requisitante.getTenantId());
         if (!competencia.isAtivo()) {
@@ -200,6 +212,20 @@ public class PdiService {
                 || pdi.getGestor().getId().equals(requisitante.getId());
         if (!gerenciavel) {
             throw naoEncontrado(id);
+        }
+        return pdi;
+    }
+
+    /**
+     * PDI que o requisitante gerencia <strong>e</strong> que ainda está ativo:
+     * ciclo concluído ou cancelado é histórico e não recebe mais itens nem ações.
+     */
+    @Transactional(readOnly = true)
+    public Pdi buscarEditavel(UUID id, UsuarioAutenticado requisitante) {
+        Pdi pdi = buscarGerenciavel(id, requisitante);
+        if (pdi.getStatus() != StatusPdi.ATIVO) {
+            throw new OperacaoNaoPermitidaException(
+                    "Este PDI não está ativo e não pode mais ser alterado. Reative-o para editar");
         }
         return pdi;
     }

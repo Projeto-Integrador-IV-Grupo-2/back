@@ -31,7 +31,7 @@ class MontadorDePromptConhecimentoTest {
         MensagemIa ultima = prompt.mensagens().get(prompt.mensagens().size() - 1);
         assertThat(ultima.papel()).isEqualTo(PapelIa.USUARIO);
         assertThat(ultima.texto())
-                .contains("<documento id=\"" + trecho.conteudoId() + "\" titulo=\"Política de férias\">")
+                .contains("<documento n=\"1\" id=\"" + trecho.conteudoId() + "\" titulo=\"Política de férias\">")
                 .contains("Trinta dias por ano.")
                 .endsWith("Pergunta: Quantos dias?");
     }

@@ -31,6 +31,18 @@ public class ClienteIaFake implements ClienteIa {
 
     private static final Pattern LIMITE_PEDIDO = Pattern.compile("Indique no máximo (\\d+) trilhas");
 
+    public static final String TEXTO_RASCUNHO_SIMULADO = "Rascunho simulado: revise os campos antes de salvar.";
+
+    private static final Pattern PERGUNTA = Pattern.compile("<pergunta>\\s*(.*?)\\s*</pergunta>", Pattern.DOTALL);
+
+    private static final Pattern ID_DE_CONTEUDO = Pattern.compile("<conteudo id=\"([^\"]+)\"");
+
+    /** Quantas etapas o rascunho simulado monta, no máximo. */
+    public static final int ETAPAS_SIMULADAS = 3;
+
+    private static final Pattern PEDIDO_DE_TRILHA =
+            Pattern.compile("(cri|mont|planej|nova trilha|rascunho)", Pattern.CASE_INSENSITIVE);
+
     private final int dimensoes;
 
     public ClienteIaFake(int dimensoes) {
@@ -40,11 +52,51 @@ public class ClienteIaFake implements ClienteIa {
     @Override
     public RespostaIa gerarResposta(String promptSistema, List<MensagemIa> mensagens) {
         String ultima = mensagens.isEmpty() ? "" : mensagens.get(mensagens.size() - 1).texto();
+        // A ajuda também manda o catálogo; o pedido em <pergunta> é o que a distingue.
+        if (ultima.contains("<pergunta>")) {
+            return new RespostaIa(ajudaComTrilhas(ultima), 0, 0);
+        }
         if (ultima.contains("<catalogo>")) {
             return new RespostaIa(sugestoesDoCatalogo(ultima), 0, 0);
         }
         int documentos = ultima.split("<documento ", -1).length - 1;
         return new RespostaIa(PREFIXO_RESPOSTA + " com base em " + documentos + " trecho(s).", 0, 0);
+    }
+
+    /**
+     * JSON da ajuda nas trilhas: pedido para criar/montar uma trilha devolve um
+     * rascunho com o próprio pedido no nome; qualquer outro, só o texto.
+     */
+    private static String ajudaComTrilhas(String turno) {
+        Matcher pergunta = PERGUNTA.matcher(turno);
+        String pedido = pergunta.find() ? pergunta.group(1).strip() : "";
+        if (!PEDIDO_DE_TRILHA.matcher(pedido).find()) {
+            return "{\"texto\":\"" + json(PREFIXO_RESPOSTA + " para: " + pedido) + "\",\"rascunho\":null}";
+        }
+        String tema = pedido.length() <= 80 ? pedido : pedido.substring(0, 80).strip();
+        StringBuilder etapas = new StringBuilder();
+        Matcher conteudos = ID_DE_CONTEUDO.matcher(turno);
+        int numero = 0;
+        while (numero < ETAPAS_SIMULADAS && conteudos.find()) {
+            numero++;
+            if (numero > 1) {
+                etapas.append(',');
+            }
+            etapas.append("{\"conteudoId\":\"").append(conteudos.group(1))
+                    .append("\",\"titulo\":\"Etapa ").append(numero)
+                    .append("\",\"descricao\":\"Etapa simulada a partir do catálogo de conteúdos.\"}");
+        }
+        return "{\"texto\":\"" + json(TEXTO_RASCUNHO_SIMULADO) + "\",\"rascunho\":{"
+                + "\"nome\":\"" + json("Trilha: " + tema) + "\","
+                + "\"descricao\":\"" + json("Rascunho simulado a partir do pedido: " + pedido) + "\","
+                + "\"objetivos\":\"Entender o tema; aplicar no dia a dia; passar na avaliação\","
+                + "\"prazoDias\":30,\"area\":null,"
+                + "\"etapas\":[" + etapas + "],"
+                + "\"conteudosFaltando\":[\"" + json("Material introdutório sobre: " + tema) + "\"]}}";
+    }
+
+    private static String json(String texto) {
+        return texto.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", " ");
     }
 
     /** JSON com as primeiras trilhas do catálogo, respeitando o limite pedido no prompt. */

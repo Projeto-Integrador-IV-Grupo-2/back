@@ -5,6 +5,9 @@ import com.nexo.dto.trilha.AtribuirTrilhaRequest;
 import com.nexo.dto.trilha.AtualizarProgressoRequest;
 import com.nexo.dto.trilha.ProgressoTrilhaResponse;
 import com.nexo.entity.StatusAtribuicao;
+import com.nexo.repository.EtapaProgressoRepository;
+import com.nexo.repository.TrilhaEtapaRepository;
+import com.nexo.entity.Perfil;
 import com.nexo.entity.Trilha;
 import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
@@ -58,13 +61,22 @@ public class TrilhaAtribuicaoService {
     private final AreaRepository areaRepository;
     private final RegraDeAtraso regraDeAtraso;
     private final ApplicationEventPublisher publisher;
+    private final TrilhaEtapaRepository trilhaEtapaRepository;
+    private final EtapaProgressoRepository etapaProgressoRepository;
+    private final CalculadoraDePercentual calculadora;
 
     public TrilhaAtribuicaoService(TrilhaAtribuicaoRepository trilhaAtribuicaoRepository,
                                     TrilhaRepository trilhaRepository,
                                     UsuarioRepository usuarioRepository,
                                     AreaRepository areaRepository,
                                     RegraDeAtraso regraDeAtraso,
-                                    ApplicationEventPublisher publisher) {
+                                    ApplicationEventPublisher publisher,
+                                    TrilhaEtapaRepository trilhaEtapaRepository,
+                                    EtapaProgressoRepository etapaProgressoRepository,
+                                    CalculadoraDePercentual calculadora) {
+        this.trilhaEtapaRepository = trilhaEtapaRepository;
+        this.etapaProgressoRepository = etapaProgressoRepository;
+        this.calculadora = calculadora;
         this.trilhaAtribuicaoRepository = trilhaAtribuicaoRepository;
         this.trilhaRepository = trilhaRepository;
         this.usuarioRepository = usuarioRepository;
@@ -254,7 +266,12 @@ public class TrilhaAtribuicaoService {
                     .filter(area -> area.getTenant().getId().equals(tenantId))
                     .orElseThrow(() -> new ResourceNotFoundException("Área não encontrada: " + request.areaId()));
 
-            List<Usuario> daArea = usuarioRepository.findByTenantIdAndAreaIdAndAtivoTrue(tenantId, request.areaId());
+            // Só colaborador cursa trilha: gestor e administrador da área ficam de
+            // fora, senão ganhariam uma pendência que não têm como cumprir.
+            List<Usuario> daArea = usuarioRepository.findByTenantIdAndAreaIdAndAtivoTrue(tenantId, request.areaId())
+                    .stream()
+                    .filter(usuario -> usuario.getPapel() == Perfil.COLABORADOR)
+                    .toList();
             if (daArea.isEmpty()) {
                 throw new OperacaoNaoPermitidaException("A área não tem colaboradores ativos para receber a trilha");
             }
@@ -270,6 +287,11 @@ public class TrilhaAtribuicaoService {
         if (!usuario.isAtivo()) {
             throw new OperacaoNaoPermitidaException(
                     "Usuário inativo não pode receber trilha: " + usuario.getEmail());
+        }
+        if (usuario.getPapel() != Perfil.COLABORADOR) {
+            throw new OperacaoNaoPermitidaException(
+                    "Só colaboradores recebem trilhas; " + usuario.getNomeCompleto()
+                            + " tem perfil de gestão");
         }
         return usuario;
     }
@@ -350,7 +372,22 @@ public class TrilhaAtribuicaoService {
                     "ATRASADA é determinado pelo prazo e não pode ser definido manualmente");
         }
         StatusAtribuicao statusAnterior = progresso.getStatus();
+        long totalDeEtapas = trilhaEtapaRepository.countByTrilhaId(progresso.getTrilha().getId());
+        long concluidas = totalDeEtapas == 0 ? 0 : etapaProgressoRepository.contarConcluidas(
+                progresso.getTrilha().getId(), progresso.getUsuario().getId());
+        if (novoStatus == StatusAtribuicao.CONCLUIDA && statusAnterior != StatusAtribuicao.CONCLUIDA
+                && concluidas < totalDeEtapas) {
+            // Trilha com etapas se conclui pelas etapas: marcar direto pularia o conteúdo.
+            long faltam = totalDeEtapas - concluidas;
+            throw new OperacaoNaoPermitidaException(
+                    "Conclua todas as etapas antes de concluir a trilha: "
+                            + (faltam == 1 ? "falta 1 etapa" : "faltam " + faltam + " etapas"));
+        }
         progresso.setStatus(novoStatus);
+        if (totalDeEtapas > 0 && novoStatus != StatusAtribuicao.CONCLUIDA) {
+            // Retomar a trilha não desfaz etapas: o percentual volta a ser o delas.
+            progresso.setPercentual(calculadora.percentual(concluidas, totalDeEtapas));
+        }
         // Repetir a conclusão é idempotente e preserva a data original.
         // Regressão para outro estado invalida a conclusão anterior.
         if (novoStatus == StatusAtribuicao.CONCLUIDA) {

@@ -14,7 +14,7 @@ dashboards.
 | Framework | Spring Boot | 3.4 |
 | Web / REST | Spring Web (MVC) | — |
 | Banco de dados | PostgreSQL + pgvector | 16 |
-| Assistente de IA | Google Gemini (chat + embeddings) | `gemini-2.5-flash` / `gemini-embedding-001` |
+| Assistente de IA | Google Gemini (chat + embeddings) | `gemini-flash-latest` / `gemini-embedding-001` |
 | Acesso a dados | Spring Data JPA (Hibernate) | — |
 | Migrations | Flyway | — |
 | Segurança | Spring Security | — |
@@ -380,6 +380,59 @@ mesma razão pela qual o `ConsultaAssistenteService` não é transacional. Por
 isso a `RecomendacaoPorIa` não conhece repository nenhum: recebendo só
 records, não há lazy loading possível fora da transação.
 
+### Ajuda da IA para trilhas
+
+`POST /api/trilhas/sugestoes/ajuda` (qualquer autenticado) recebe um pedido
+livre — `{"pergunta": "Monte uma trilha de LGPD para o time"}`, até 2000
+caracteres — e responde:
+
+```json
+{
+  "texto": "Montei uma trilha de 14 dias com 3 etapas, do conceito ao incidente.",
+  "rascunho": {
+    "nome": "LGPD na prática",
+    "descricao": "O que são dados pessoais e sensíveis e como tratá-los.",
+    "areaId": null,
+    "prazoDias": 14,
+    "objetivos": "Identificar dados sensíveis; comunicar incidentes em até 24h",
+    "etapas": [
+      {
+        "conteudoId": "…",
+        "conteudoTitulo": "Fundamentos de LGPD",
+        "conteudoTipo": "VIDEO",
+        "titulo": "O que a lei protege",
+        "descricao": "Dados pessoais e sensíveis, com exemplos do dia a dia."
+      }
+    ],
+    "conteudosFaltando": ["Exercícios práticos de classificação de dados"]
+  }
+}
+```
+
+`rascunho` só vem quando o pedido é para criar, montar ou planejar uma trilha;
+nos outros casos (o que estudar, quais trilhas combinam com o PDI) é `null`.
+É uma **trilha completa**: os dados do cadastro, as **etapas em ordem de
+estudo** (de 3 a 10, cada uma com um conteúdo publicado da base) e os temas
+que ainda **não têm conteúdo** para virar etapa. O rascunho **não é gravado**:
+o front mostra a trilha e, quando quem cria confirma, chama o `POST /api/trilhas`
+e o `POST /api/trilhas/{id}/etapas` de sempre, com as validações deles.
+
+- Usa o mesmo `ColetorDeDadosDaSugestao` da sugestão (perfil sem dado pessoal
+  e catálogo de trilhas ativas que o usuário ainda não concluiu) e o
+  `ColetorDeConteudos`, com até 80 conteúdos **publicados** do tenant — o mesmo
+  critério do cadastro de etapa.
+- Perfil, catálogo e conteúdos são dado, nunca instrução; o pedido vai entre
+  `<pergunta>`, com as marcações do prompt neutralizadas (inclusive
+  `</pergunta>` e `<conteudo>`).
+- O rascunho que volta do modelo é saneado (`PromptDeAjuda`): campos cortados
+  aos limites do `CriarTrilhaRequest` e do `EtapaRequest`, prazo fora de 1–365
+  vira nulo, a área só é aceita se o nome bater com uma área do catálogo, e
+  **só vira etapa o conteúdo que estava no catálogo enviado** — id inventado ou
+  repetido é descartado. Título e tipo do conteúdo vêm do banco, não do modelo.
+- Resposta sem JSON vira o próprio texto, sem rascunho.
+- Mesma regra de transação da sugestão: banco lido antes, modelo depois.
+- IA fora do ar: **503**, como as outras rotas de IA.
+
 ### Atribuição
 
 O corpo leva **ou** `usuarioIds` **ou** `areaId` — nunca os dois (400 se vierem
@@ -518,7 +571,7 @@ O prompt e a resposta nunca entram no evento.
 
 | Critério | Google Gemini (escolhido) | OpenAI |
 |---|---|---|
-| Chat | `gemini-2.5-flash` | `gpt-4o-mini` |
+| Chat | `gemini-flash-latest` (alias do Flash atual) | `gpt-4o-mini` |
 | Embeddings | `gemini-embedding-001` (768 dimensões via `outputDimensionality`) | `text-embedding-3-small` (1536) |
 | Custo | Camada gratuita com limite diário, suficiente para o projeto | Pago desde a primeira chamada |
 | Português | Bom em chat e em busca semântica | Bom |
@@ -539,6 +592,8 @@ Nos testes (`IA_PROVEDOR=fake`, já definido no perfil `test`), o
 reconhece o prompt da sugestão de trilhas e responde o JSON daquele fluxo,
 escolhendo as primeiras trilhas do catálogo recebido — então
 `GET /api/trilhas/sugestoes` funciona de ponta a ponta com o provedor `fake`.
+Também reconhece o pedido da ajuda nas trilhas (`<pergunta>`): pedido para
+criar ou montar uma trilha devolve um rascunho simulado; os outros, só texto.
 
 ### Indexação dos documentos
 
@@ -568,6 +623,12 @@ mesmo antes da remoção.
 falha fica em `indexacao_conteudo`, com status `FALHOU`, número de tentativas
 e último erro. A `RotinaDeReindexacao` tenta de novo a cada minuto, com espera
 que dobra a cada falha, até `IA_INDEXACAO_MAX_TENTATIVAS`.
+
+A mesma rotina indexa o que ficou para trás: conteúdo publicado que nunca foi
+indexado (publicado antes de a `IA_API_KEY` existir, por exemplo) e falhas que
+esgotaram as tentativas há mais de 6 horas. Sem `IA_API_KEY` a indexação nem
+tenta — e não gasta tentativas —, então basta configurar a chave para a base
+inteira ser indexada sozinha, em lotes de 25 por minuto.
 
 **Extração de arquivos:** a `ExtratorDeTextoFactory` entrega o extrator pelo
 tipo MIME: PDF (PDFBox), DOCX (Apache POI), TXT e MD (UTF-8). A
@@ -672,6 +733,9 @@ O fluxo de uma pergunta é este:
    `IA_MENSAGENS_HISTORICO` mensagens da sessão. O prompt de sistema diz que o
    texto dos documentos é **dado, nunca instrução**, e marcações
    `<documento>` vindas do próprio texto são neutralizadas.
+   O modelo termina a resposta com a linha `FONTES: 1, 3` (os trechos que usou,
+   ou `nenhuma`); a `FontesDaResposta` tira essa linha do texto e só os trechos
+   declarados viram fonte. Sem isso, um "olá" sairia com fontes sem relação.
 6. A pergunta e a resposta são gravadas **juntas** em `chat_mensagem`, com os
    trechos usados em `fontes` (JSONB: ID/título do documento, ID/ordem do trecho
    e o texto citado). Se o provedor cair, a resposta é **503** e nada fica
@@ -916,16 +980,17 @@ define-se a variável e ela prevalece.
 | `VIMEO_TIMEOUT` | `PT5S` | Tempo máximo de espera pela resposta do Vimeo |
 | `IA_PROVEDOR` | `gemini` | Implementação do `ClienteIa`: `gemini` ou `fake` (testes) |
 | `IA_API_KEY` | *(vazio)* | Chave da API do Gemini ([Google AI Studio](https://aistudio.google.com/apikey)). Sem ela, as rotas de IA respondem 503 |
-| `IA_MODELO` | `gemini-2.5-flash` | Modelo de chat |
+| `IA_MODELO` | `gemini-flash-latest` | Modelo de chat. É um alias que o Google mantém no Flash atual: o `gemini-2.5-flash` responde 404 para contas criadas depois da aposentadoria dele |
 | `IA_MODELO_EMBEDDING` | `gemini-embedding-001` | Modelo de embeddings (sempre com 768 dimensões) |
-| `IA_TIMEOUT` | `PT20S` | Tempo máximo de cada chamada ao provedor |
+| `IA_MODELOS_RESERVA` | `gemini-flash-lite-latest` | Modelos de chat tentados, na ordem, quando o principal responde 429/5xx, estoura o timeout ou foi aposentado (404). Separados por vírgula; vazio desliga. Na camada gratuita o Flash costuma ficar sobrecarregado, e o Flash-Lite responde em poucos segundos |
+| `IA_TIMEOUT` | `PT30S` | Tempo máximo de cada chamada, por modelo. Um modelo que estoura o timeout não é tentado de novo na mesma chamada quando há reserva |
 | `IA_MAX_TENTATIVAS` | `3` | Tentativas por chamada em timeout, 429 ou 5xx |
 | `IA_TAMANHO_TRECHO` | `1000` | Máximo de caracteres por trecho indexado |
 | `IA_SOBREPOSICAO_TRECHO` | `200` | Caracteres repetidos entre trechos vizinhos |
 | `IA_INDEXACAO_MAX_TENTATIVAS` | `5` | Tentativas de indexar um documento antes de desistir |
 | `IA_INDEXACAO_INTERVALO` | `PT5M` | Espera base entre uma falha de indexação e a próxima tentativa |
 | `IA_BUSCA_TRECHOS` | `5` | Quantos trechos entram no prompt |
-| `IA_BUSCA_DISTANCIA_MAXIMA` | `0.6` | Distância de cosseno máxima para um trecho contar como relevante |
+| `IA_BUSCA_DISTANCIA_MAXIMA` | `0.45` | Distância de cosseno máxima para um trecho contar como relevante. Com o `gemini-embedding-001`, trecho que responde a pergunta fica entre 0,20 e 0,35 e assunto sem relação passa de 0,45 |
 | `IA_PERGUNTAS_POR_MINUTO` | `10` | Perguntas ao assistente aceitas por usuário a cada minuto |
 | `IA_MENSAGENS_HISTORICO` | `6` | Mensagens anteriores da sessão que entram no prompt |
 | `NOTIFICACAO_DIAS_PRAZO` | `3` | Com quantos dias de antecedência a rotina avisa o prazo da trilha |

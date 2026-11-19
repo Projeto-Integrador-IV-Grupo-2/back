@@ -41,6 +41,10 @@ public interface UsuarioRepository
     /** Destinatários de uma atribuição de trilha por área: só os ativos. */
     List<Usuario> findByTenantIdAndAreaIdAndAtivoTrue(UUID tenantId, UUID areaId);
 
+    /** Usuários ativos de um perfil, por trecho do nome — quem pode receber PDI ou trilha. */
+    Page<Usuario> findByTenantIdAndAtivoTrueAndPapelAndNomeCompletoContainingIgnoreCase(
+            UUID tenantId, Perfil papel, String nome, Pageable pageable);
+
     /** Destinatários de notificação por perfil: os ativos de uma área (issue #78). */
     List<Usuario> findByTenantIdAndAreaIdAndPapelAndAtivoTrue(UUID tenantId, UUID areaId, Perfil papel);
 

@@ -213,7 +213,7 @@ class PdiAcaoServiceTest {
     void itemDeOutroPdiLancaResourceNotFound() {
         Pdi outroPdi = Pdi.novo(colaborador, gestor, "2025", LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31));
         ReflectionTestUtils.setField(outroPdi, "id", UUID.randomUUID());
-        when(pdiService.buscarGerenciavel(outroPdi.getId(), requisitante)).thenReturn(outroPdi);
+        when(pdiService.buscarEditavel(outroPdi.getId(), requisitante)).thenReturn(outroPdi);
         when(pdiItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
 
         assertThatThrownBy(() -> pdiAcaoService.adicionar(outroPdi.getId(), item.getId(),
@@ -268,7 +268,7 @@ class PdiAcaoServiceTest {
     }
 
     private void prepararItemGerenciavel() {
-        when(pdiService.buscarGerenciavel(pdi.getId(), requisitante)).thenReturn(pdi);
+        when(pdiService.buscarEditavel(pdi.getId(), requisitante)).thenReturn(pdi);
         when(pdiItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
     }
 

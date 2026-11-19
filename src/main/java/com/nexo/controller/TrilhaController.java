@@ -1,5 +1,7 @@
 package com.nexo.controller;
 
+import com.nexo.dto.trilha.AjudaTrilhasRequest;
+import com.nexo.dto.trilha.AjudaTrilhasResponse;
 import com.nexo.dto.trilha.AtribuicaoEmLoteResponse;
 import com.nexo.dto.trilha.AtribuirTrilhaRequest;
 import com.nexo.dto.trilha.AtualizarProgressoRequest;
@@ -13,6 +15,7 @@ import com.nexo.repository.TrilhaFiltro;
 import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.TrilhaAtribuicaoService;
 import com.nexo.service.TrilhaService;
+import com.nexo.service.recomendacao.AjudaDeTrilhasService;
 import com.nexo.service.recomendacao.SugestaoDeTrilhasService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -55,13 +58,29 @@ public class TrilhaController {
     private final TrilhaService trilhaService;
     private final TrilhaAtribuicaoService trilhaAtribuicaoService;
     private final SugestaoDeTrilhasService sugestaoDeTrilhasService;
+    private final AjudaDeTrilhasService ajudaDeTrilhasService;
 
     public TrilhaController(TrilhaService trilhaService,
                             TrilhaAtribuicaoService trilhaAtribuicaoService,
-                            SugestaoDeTrilhasService sugestaoDeTrilhasService) {
+                            SugestaoDeTrilhasService sugestaoDeTrilhasService,
+                            AjudaDeTrilhasService ajudaDeTrilhasService) {
         this.trilhaService = trilhaService;
         this.trilhaAtribuicaoService = trilhaAtribuicaoService;
         this.sugestaoDeTrilhasService = sugestaoDeTrilhasService;
+        this.ajudaDeTrilhasService = ajudaDeTrilhasService;
+    }
+
+    /**
+     * Pedido livre à IA sobre trilhas — o que estudar, como planejar uma trilha
+     * nova. Quando o pedido é para criar uma, a resposta traz um rascunho com
+     * os campos do cadastro (não gravado). Qualquer autenticado pode pedir; só
+     * quem cria trilhas usa o rascunho, que passa pelo {@code POST /api/trilhas}
+     * de sempre. IA fora do ar responde 503.
+     */
+    @PostMapping("/sugestoes/ajuda")
+    public AjudaTrilhasResponse ajuda(@Valid @RequestBody AjudaTrilhasRequest request,
+                                      @AuthenticationPrincipal UsuarioAutenticado usuario) {
+        return ajudaDeTrilhasService.ajudar(request.pergunta(), usuario);
     }
 
     /**

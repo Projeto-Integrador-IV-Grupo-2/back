@@ -12,14 +12,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param oembedUrl endereço do oEmbed do Vimeo
  * @param timeout   tempo máximo de espera pela resposta
+ * @param referer   endereço do front, enviado como {@code Referer}: vídeo com
+ *                  incorporação restrita a domínios só é reconhecido pelo oEmbed
+ *                  quando o pedido vem de um domínio liberado
  */
 @ConfigurationProperties(prefix = "app.vimeo")
-public record VimeoProperties(String oembedUrl, Duration timeout) {
+public record VimeoProperties(String oembedUrl, Duration timeout, String referer) {
 
     public VimeoProperties {
         if (oembedUrl == null || oembedUrl.isBlank()) {
             oembedUrl = "https://vimeo.com/api/oembed.json";
         }
+        referer = referer == null || referer.isBlank() ? null : referer.trim();
         if (timeout == null || timeout.isNegative() || timeout.isZero()) {
             timeout = Duration.ofSeconds(5);
         }

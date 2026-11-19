@@ -58,7 +58,7 @@ public class PdiAcaoService {
     @Transactional
     public PdiAcaoResponse adicionar(UUID pdiId, UUID itemId, PdiAcaoRequest request,
                                      UsuarioAutenticado requisitante) {
-        PdiItem item = buscarItem(pdiService.buscarGerenciavel(pdiId, requisitante), itemId);
+        PdiItem item = buscarItem(pdiService.buscarEditavel(pdiId, requisitante), itemId);
         PdiAcao acao = pdiAcaoRepository.saveAndFlush(acaoPdiFactory.criar(item, request, requisitante));
         return responder(acao);
     }
@@ -68,7 +68,7 @@ public class PdiAcaoService {
     public PdiAcaoResponse atualizarStatus(UUID pdiId, UUID itemId, UUID acaoId,
                                            AtualizarStatusAcaoRequest request,
                                            UsuarioAutenticado requisitante) {
-        PdiItem item = buscarItem(pdiService.buscarGerenciavel(pdiId, requisitante), itemId);
+        PdiItem item = buscarItem(pdiService.buscarEditavel(pdiId, requisitante), itemId);
         PdiAcao acao = pdiAcaoRepository.findById(acaoId)
                 .filter(a -> a.getPdiItem().getId().equals(item.getId()))
                 .orElseThrow(() -> new ResourceNotFoundException("Ação não encontrada: " + acaoId));

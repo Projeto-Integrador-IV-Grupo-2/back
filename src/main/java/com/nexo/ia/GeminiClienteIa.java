@@ -3,11 +3,15 @@ package com.nexo.ia;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.nexo.config.IaProperties;
 import com.nexo.exception.IaIndisponivelException;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -20,13 +24,22 @@ import org.springframework.web.client.RestClientException;
 /**
  * {@link ClienteIa} do Google Gemini, pela API REST {@code v1beta}.
  *
- * <p>Sem estado: o {@link RestClient} vem pronto de {@code IaConfig} e é
+ * <p>O único estado é a pausa dos modelos que falharam; o {@link RestClient} vem pronto de {@code IaConfig} e é
  * reaproveitado por todas as chamadas. Quem cria a instância é a
  * {@link ClienteIaFactory} — o resto do sistema só enxerga {@link ClienteIa}.</p>
  *
  * <p>Timeout, 429 e 5xx ganham novas tentativas, com espera crescente, até
  * {@code app.ia.max-tentativas}. Outros 4xx (chave inválida, pedido recusado)
  * falham na hora. Toda falha vira {@link IaIndisponivelException} (503).</p>
+ *
+ * <p><strong>Modelos reserva:</strong> a geração de texto percorre
+ * {@code app.ia.modelo} e depois {@code app.ia.modelos-reserva}, na ordem. Um
+ * modelo sobrecarregado (429/5xx) passa a vez para o próximo na mesma rodada;
+ * um que estourou o timeout ou foi aposentado pelo provedor (404) sai da
+ * conversa até o fim da chamada, para o usuário não esperar o mesmo timeout
+ * de novo. Quem falhou fica cinco minutos no fim da fila, para as próximas
+ * perguntas não pagarem a mesma espera. Os embeddings usam um modelo só: trocar de modelo mudaria o espaço
+ * vetorial dos trechos já indexados.</p>
  *
  * <p>A chave vai só no header {@code x-goog-api-key}. Os logs registram o
  * status HTTP, nunca o prompt, a resposta ou a chave.</p>
@@ -41,9 +54,15 @@ public class GeminiClienteIa implements ClienteIa {
     private static final String HEADER_CHAVE = "x-goog-api-key";
     private static final double TEMPERATURA = 0.2;
 
+    /** Por quanto tempo um modelo que falhou (429, 5xx ou timeout) cede a vez aos outros. */
+    static final Duration PAUSA_DO_MODELO = Duration.ofMinutes(5);
+
     private final RestClient restClient;
     private final IaProperties properties;
     private final Duration esperaBase;
+
+    /** Até quando ({@link System#nanoTime()}) cada modelo que falhou fica no fim da fila. */
+    private final Map<String, Long> emPausaAte = new ConcurrentHashMap<>();
 
     public GeminiClienteIa(RestClient restClient, IaProperties properties) {
         this(restClient, properties, Duration.ofMillis(500));
@@ -57,6 +76,11 @@ public class GeminiClienteIa implements ClienteIa {
     }
 
     @Override
+    public boolean disponivel() {
+        return properties.temChave();
+    }
+
+    @Override
     public RespostaIa gerarResposta(String promptSistema, List<MensagemIa> mensagens) {
         exigirChave();
         Map<String, Object> corpo = Map.of(
@@ -64,8 +88,8 @@ public class GeminiClienteIa implements ClienteIa {
                 "contents", mensagens.stream().map(GeminiClienteIa::conteudo).toList(),
                 "generationConfig", Map.of("temperature", TEMPERATURA));
 
-        RespostaGeracao resposta = comNovasTentativas(() -> restClient.post()
-                .uri(properties.urlBase() + "/models/{modelo}:generateContent", properties.modelo())
+        RespostaGeracao resposta = comNovasTentativas(properties.modelosDeGeracao(), modelo -> restClient.post()
+                .uri(properties.urlBase() + "/models/{modelo}:generateContent", modelo)
                 .header(HEADER_CHAVE, properties.apiKey())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(corpo)
@@ -104,8 +128,8 @@ public class GeminiClienteIa implements ClienteIa {
                         "outputDimensionality", properties.dimensoes()))
                 .toList();
 
-        RespostaEmbeddings resposta = comNovasTentativas(() -> restClient.post()
-                .uri(properties.urlBase() + "/models/{modelo}:batchEmbedContents", properties.modeloEmbedding())
+        RespostaEmbeddings resposta = comNovasTentativas(List.of(properties.modeloEmbedding()), nome -> restClient.post()
+                .uri(properties.urlBase() + "/models/{modelo}:batchEmbedContents", nome)
                 .header(HEADER_CHAVE, properties.apiKey())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("requests", pedidos))
@@ -129,37 +153,122 @@ public class GeminiClienteIa implements ClienteIa {
         return vetor;
     }
 
-    private <T> T comNovasTentativas(Supplier<T> chamada) {
+    /**
+     * Chama o provedor percorrendo {@code modelos} em rodadas, até
+     * {@code app.ia.max-tentativas} rodadas, com espera crescente entre elas.
+     */
+    private <T> T comNovasTentativas(List<String> modelos, Function<String, T> chamada) {
         int maxTentativas = properties.maxTentativas();
-        for (int tentativa = 1; ; tentativa++) {
-            try {
-                return chamada.get();
-            } catch (HttpClientErrorException ex) {
-                if (ex.getStatusCode().value() != 429) {
-                    log.warn("Provedor de IA recusou a chamada com HTTP {}", ex.getStatusCode().value());
-                    throw new IaIndisponivelException(
-                            "O provedor de IA recusou a chamada. Verifique a configuração do assistente.", ex);
-                }
-                if (tentativa >= maxTentativas) {
-                    throw new IaIndisponivelException(
-                            "O assistente de IA atingiu o limite de uso. Tente novamente em instantes.", ex);
-                }
-                log.info("Provedor de IA respondeu 429; tentativa {} de {}", tentativa, maxTentativas);
-            } catch (HttpServerErrorException | ResourceAccessException ex) {
-                if (tentativa >= maxTentativas) {
-                    log.warn("Provedor de IA indisponível após {} tentativas: {}", tentativa, ex.getClass().getSimpleName());
-                    throw new IaIndisponivelException(
-                            "O assistente de IA está indisponível no momento. Tente novamente em instantes.", ex);
-                }
-                log.info("Falha temporária do provedor de IA ({}); tentativa {} de {}",
-                        ex.getClass().getSimpleName(), tentativa, maxTentativas);
-            } catch (RestClientException ex) {
-                log.warn("Resposta inesperada do provedor de IA: {}", ex.getClass().getSimpleName());
-                throw new IaIndisponivelException(
-                        "O assistente de IA está indisponível no momento. Tente novamente em instantes.", ex);
+        // Modelos que não adianta tentar de novo nesta chamada (aposentado ou timeout).
+        Set<String> fora = new HashSet<>();
+        boolean algumAposentado = false;
+        boolean limiteDeUso = false;
+        RuntimeException ultima = null;
+        for (int tentativa = 1; tentativa <= maxTentativas && fora.size() < modelos.size(); tentativa++) {
+            if (tentativa > 1) {
+                esperar(tentativa - 1);
             }
-            esperar(tentativa);
+            for (String modelo : saudaveisPrimeiro(modelos)) {
+                if (fora.contains(modelo)) {
+                    continue;
+                }
+                try {
+                    return chamada.apply(modelo);
+                } catch (HttpClientErrorException ex) {
+                    int status = ex.getStatusCode().value();
+                    ultima = ex;
+                    if (status == 404) {
+                        // O provedor aposenta modelos: o próximo da lista assume.
+                        log.warn("Modelo de IA '{}' não existe mais no provedor (HTTP 404)", modelo);
+                        fora.add(modelo);
+                        algumAposentado = true;
+                    } else if (status == 429) {
+                        limiteDeUso = true;
+                        pausar(modelo);
+                        log.info("Provedor de IA respondeu 429 para '{}'; tentativa {} de {}",
+                                modelo, tentativa, maxTentativas);
+                    } else {
+                        log.warn("Provedor de IA recusou a chamada com HTTP {}", status);
+                        throw new IaIndisponivelException(
+                                "O provedor de IA recusou a chamada. Verifique a configuração do assistente.", ex);
+                    }
+                } catch (RestClientException ex) {
+                    boolean falhaDeRede = ex instanceof ResourceAccessException || causadaPorRede(ex);
+                    if (!falhaDeRede && !(ex instanceof HttpServerErrorException)) {
+                        log.warn("Resposta inesperada do provedor de IA: {}", ex.getClass().getSimpleName());
+                        throw new IaIndisponivelException(
+                                "O assistente de IA está indisponível no momento. Tente novamente em instantes.", ex);
+                    }
+                    ultima = ex;
+                    limiteDeUso = false;
+                    pausar(modelo);
+                    log.info("Falha temporária do provedor de IA em '{}' ({}); tentativa {} de {}",
+                            modelo, falhaDeRede ? "rede/timeout" : ex.getClass().getSimpleName(),
+                            tentativa, maxTentativas);
+                    if (falhaDeRede && modelos.size() > 1) {
+                        // Já custou um timeout inteiro: com reserva disponível, não espera outro.
+                        fora.add(modelo);
+                    }
+                }
+            }
         }
+        if (algumAposentado && ultima instanceof HttpClientErrorException erro
+                && erro.getStatusCode().value() == 404) {
+            throw new IaIndisponivelException(
+                    "O provedor de IA recusou a chamada. Verifique a configuração do assistente "
+                            + "(o modelo configurado não existe mais).", ultima);
+        }
+        if (limiteDeUso) {
+            throw new IaIndisponivelException(
+                    "O assistente de IA atingiu o limite de uso. Tente novamente em instantes.", ultima);
+        }
+        log.warn("Provedor de IA indisponível após {} tentativa(s) em {} modelo(s)", maxTentativas, modelos.size());
+        throw new IaIndisponivelException(
+                "O assistente de IA está indisponível no momento. Tente novamente em instantes.", ultima);
+    }
+
+    /**
+     * O timeout pode estourar com a resposta já em leitura; aí o Spring embrulha
+     * o {@link IOException} numa {@link RestClientException} comum, não numa
+     * {@link ResourceAccessException}. É falha de rede do mesmo jeito.
+     */
+    private static boolean causadaPorRede(Throwable erro) {
+        for (Throwable causa = erro.getCause(); causa != null; causa = causa.getCause()) {
+            if (causa instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Deixa o modelo no fim da fila por {@link #PAUSA_DO_MODELO}. */
+    private void pausar(String modelo) {
+        emPausaAte.put(modelo, System.nanoTime() + PAUSA_DO_MODELO.toNanos());
+    }
+
+    /**
+     * Mesma lista, com os modelos que falharam há pouco no fim: um modelo
+     * sobrecarregado costuma segurar a conexão por vários segundos antes de
+     * responder 503, então as próximas perguntas vão direto para quem está
+     * respondendo. Ninguém sai da lista — em pausa, só é tentado por último.
+     */
+    private List<String> saudaveisPrimeiro(List<String> modelos) {
+        if (modelos.size() < 2 || emPausaAte.isEmpty()) {
+            return modelos;
+        }
+        long agora = System.nanoTime();
+        List<String> ordenados = new ArrayList<>(modelos.size());
+        List<String> pausados = new ArrayList<>();
+        for (String modelo : modelos) {
+            Long ate = emPausaAte.get(modelo);
+            if (ate != null && ate - agora > 0) {
+                pausados.add(modelo);
+            } else {
+                ordenados.add(modelo);
+            }
+        }
+        ordenados.addAll(pausados);
+        return ordenados;
     }
 
     private void esperar(int tentativa) {

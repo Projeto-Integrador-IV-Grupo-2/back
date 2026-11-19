@@ -84,11 +84,17 @@ class TrilhaAtribuicaoServiceTest {
             Clock.fixed(ZonedDateTime.of(HOJE.atStartOfDay(), ZoneId.systemDefault()).toInstant(),
                     ZoneId.systemDefault()));
 
+    private final com.nexo.repository.TrilhaEtapaRepository trilhaEtapaRepository =
+            org.mockito.Mockito.mock(com.nexo.repository.TrilhaEtapaRepository.class);
+    private final com.nexo.repository.EtapaProgressoRepository etapaProgressoRepository =
+            org.mockito.Mockito.mock(com.nexo.repository.EtapaProgressoRepository.class);
+
     @BeforeEach
     void setUp() {
         trilhaAtribuicaoService = new TrilhaAtribuicaoService(
                 trilhaAtribuicaoRepository, trilhaRepository, usuarioRepository, areaRepository,
-                regraDeAtraso, publisher);
+                regraDeAtraso, publisher, trilhaEtapaRepository, etapaProgressoRepository,
+                new CalculadoraDePercentual());
         tenant = tenantComId();
         requisitante = new UsuarioAutenticado(
                 UUID.randomUUID(), tenant.getId(), "Maria Silva", "maria.silva@empresa.com",
@@ -194,6 +200,56 @@ class TrilhaAtribuicaoServiceTest {
 
         assertThat(response.status()).isEqualTo(StatusAtribuicao.CONCLUIDA);
         assertThat(response.concluidoEm()).isNotNull();
+    }
+
+    @Test
+    void trilhaComEtapasPendentesNaoPodeSerMarcadaComoConcluida() {
+        TrilhaAtribuicao existente = progressoExistente(StatusAtribuicao.EM_ANDAMENTO);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(existente));
+        when(trilhaEtapaRepository.countByTrilhaId(any())).thenReturn(5L);
+        when(etapaProgressoRepository.contarConcluidas(any(), any())).thenReturn(3L);
+
+        assertThatThrownBy(() -> trilhaAtribuicaoService.concluir(trilhaId, requisitante))
+                .isInstanceOf(OperacaoNaoPermitidaException.class)
+                .hasMessageContaining("faltam 2 etapas");
+        assertThat(existente.getStatus()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
+    }
+
+    @Test
+    void retomarTrilhaDevolveOPercentualDasEtapas() {
+        TrilhaAtribuicao existente = progressoExistente(StatusAtribuicao.CONCLUIDA);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(trilhaAtribuicaoRepository.findByTrilhaIdAndUsuarioId(trilhaId, requisitante.getId()))
+                .thenReturn(Optional.of(existente));
+        when(trilhaAtribuicaoRepository.saveAndFlush(any(TrilhaAtribuicao.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(trilhaEtapaRepository.countByTrilhaId(any())).thenReturn(4L);
+        when(etapaProgressoRepository.contarConcluidas(any(), any())).thenReturn(3L);
+
+        ProgressoTrilhaResponse resposta = trilhaAtribuicaoService.atualizar(
+                trilhaId, new AtualizarProgressoRequest(StatusAtribuicao.EM_ANDAMENTO), requisitante);
+
+        assertThat(resposta.status()).isEqualTo(StatusAtribuicao.EM_ANDAMENTO);
+        assertThat(resposta.percentual()).isEqualTo(75);
+    }
+
+    @Test
+    void gestorDaAreaNaoRecebeATrilhaAtribuidaPorArea() {
+        trilha.setAtivo(true);
+        UUID areaId = UUID.randomUUID();
+        Usuario gestor = colaboradorAtivo();
+        gestor.setPapel(Perfil.GESTOR);
+        when(trilhaRepository.findById(trilhaId)).thenReturn(Optional.of(trilha));
+        when(areaRepository.findById(areaId)).thenReturn(Optional.of(areaDoTenant(areaId)));
+        when(usuarioRepository.findByTenantIdAndAreaIdAndAtivoTrue(tenant.getId(), areaId))
+                .thenReturn(List.of(gestor));
+
+        assertThatThrownBy(() -> trilhaAtribuicaoService.atribuir(
+                trilhaId, new AtribuirTrilhaRequest(null, areaId, null), requisitante))
+                .isInstanceOf(OperacaoNaoPermitidaException.class);
+        verify(trilhaAtribuicaoRepository, never()).save(any(TrilhaAtribuicao.class));
     }
 
     @Test

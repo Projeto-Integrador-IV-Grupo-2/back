@@ -64,6 +64,7 @@ class IndexacaoServiceTest {
 
     @BeforeEach
     void prepara() {
+        org.mockito.Mockito.lenient().when(clienteIa.disponivel()).thenReturn(true);
         IaProperties properties = new IaProperties("fake", null, null, null, null, 768, null, null,
                 new IaProperties.Indexacao(100, 20, 3, Duration.ofMinutes(5)), null, null, null);
         service = new IndexacaoService(conteudoRepository, chunkRepository, indexacaoRepository,

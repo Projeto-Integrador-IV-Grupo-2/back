@@ -51,13 +51,32 @@ final class PromptDeSugestao {
      * modelo pode escolher.
      */
     static String turno(PerfilDoUsuario perfil, List<TrilhaCandidata> catalogo, int limite) {
-        StringBuilder texto = new StringBuilder("<perfil>\n");
+        StringBuilder texto = new StringBuilder();
+        acrescentaPerfil(texto, perfil);
+        texto.append('\n');
+        acrescentaCatalogo(texto, catalogo);
+        texto.append("\nIndique no máximo ").append(limite)
+                .append(" trilhas para este colaborador.");
+        return texto.toString();
+    }
+
+    /**
+     * Bloco {@code <perfil>} do prompt. Também usado pela ajuda da IA nas
+     * trilhas ({@link PromptDeAjuda}), que conversa sobre o mesmo colaborador.
+     */
+    static void acrescentaPerfil(StringBuilder texto, PerfilDoUsuario perfil) {
+        texto.append("<perfil>\n");
         acrescenta(texto, "Área", perfil.area());
         acrescenta(texto, "Cargo", perfil.cargo());
         acrescenta(texto, "Trilhas já concluídas", juntar(perfil.trilhasConcluidas()));
         acrescenta(texto, "Trilhas em andamento", juntar(perfil.trilhasEmAndamento()));
         acrescenta(texto, "Competências do PDI a desenvolver", juntar(perfil.competenciasDoPdi()));
-        texto.append("</perfil>\n\n<catalogo>\n");
+        texto.append("</perfil>\n");
+    }
+
+    /** Bloco {@code <catalogo>} do prompt, com o texto das trilhas já neutralizado. */
+    static void acrescentaCatalogo(StringBuilder texto, List<TrilhaCandidata> catalogo) {
+        texto.append("<catalogo>\n");
         for (TrilhaCandidata trilha : catalogo) {
             texto.append("<trilha id=\"").append(trilha.id()).append("\">\n")
                     .append("Nome: ").append(neutralizar(trilha.nome())).append('\n')
@@ -68,9 +87,7 @@ final class PromptDeSugestao {
                     .append(trilha.objetivos() == null ? "não informados" : neutralizar(trilha.objetivos()))
                     .append("\n</trilha>\n");
         }
-        texto.append("</catalogo>\n\nIndique no máximo ").append(limite)
-                .append(" trilhas para este colaborador.");
-        return texto.toString();
+        texto.append("</catalogo>\n");
     }
 
     /**
@@ -110,7 +127,8 @@ final class PromptDeSugestao {
         return texto == null ? "" : MARCACAO.matcher(texto).replaceAll(m -> m.group().replace("<", "‹"));
     }
 
-    private static JsonNode lerJson(ObjectMapper mapper, String resposta) {
+    /** JSON da resposta do modelo, tolerando ``` ou uma frase em volta; {@code null} se não der. */
+    static JsonNode lerJson(ObjectMapper mapper, String resposta) {
         if (resposta == null || resposta.isBlank()) {
             return null;
         }

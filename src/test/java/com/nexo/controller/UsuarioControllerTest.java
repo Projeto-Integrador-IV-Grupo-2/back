@@ -293,6 +293,24 @@ class UsuarioControllerTest {
                 .andExpect(status().isConflict());
     }
 
+    @Test
+    @WithUserDetails(value = ADMIN_EMAIL, userDetailsServiceBeanName = "customUserDetailsService",
+            setupBefore = TestExecutionEvent.TEST_EXECUTION)
+    void administradorNaoConsegueMudarOProprioPerfil() throws Exception {
+        mockMvc.perform(put("/api/usuarios/{id}", adminId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new AtualizarUsuarioRequest("Administrador", null, null, Perfil.COLABORADOR))))
+                .andExpect(status().isConflict());
+
+        // Editar os outros dados, mantendo o perfil, continua permitido.
+        mockMvc.perform(put("/api/usuarios/{id}", adminId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new AtualizarUsuarioRequest("Administrador", null, null, Perfil.ADMIN))))
+                .andExpect(status().isOk());
+    }
+
     private CriarUsuarioRequest novoRequestValido(String prefixoEmail) {
         return new CriarUsuarioRequest(
                 "Usuario " + prefixoEmail,

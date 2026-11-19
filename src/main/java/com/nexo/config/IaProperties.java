@@ -1,7 +1,10 @@
 package com.nexo.config;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * Assistente de IA lido de {@code app.ia.*}.
@@ -13,6 +16,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param apiKey          chave do provedor — nunca vai para log nem para resposta
  * @param urlBase         endereço base da API do provedor
  * @param modelo          modelo de chat
+ * @param modelosReserva  modelos de chat tentados, na ordem, quando o principal falha
  * @param modeloEmbedding modelo de embeddings
  * @param dimensoes       tamanho do vetor; precisa bater com a coluna {@code vector(768)}
  * @param timeout         tempo máximo de cada chamada
@@ -35,22 +39,47 @@ public record IaProperties(
         Indexacao indexacao,
         Busca busca,
         Consulta consulta,
-        Sugestao sugestao) {
+        Sugestao sugestao,
+        List<String> modelosReserva) {
 
     public static final int DIMENSOES_PADRAO = 768;
 
+    /** Sem modelos reserva — a forma usada pelos testes que não tratam disso. */
+    public IaProperties(String provedor, String apiKey, String urlBase, String modelo, String modeloEmbedding,
+                        Integer dimensoes, Duration timeout, Integer maxTentativas, Indexacao indexacao,
+                        Busca busca, Consulta consulta, Sugestao sugestao) {
+        this(provedor, apiKey, urlBase, modelo, modeloEmbedding, dimensoes, timeout, maxTentativas, indexacao,
+                busca, consulta, sugestao, null);
+    }
+
+    @ConstructorBinding
     public IaProperties {
         provedor = textoOu(provedor, "gemini");
         urlBase = textoOu(urlBase, "https://generativelanguage.googleapis.com/v1beta");
-        modelo = textoOu(modelo, "gemini-2.5-flash");
+        modelo = textoOu(modelo, "gemini-flash-latest");
         modeloEmbedding = textoOu(modeloEmbedding, "gemini-embedding-001");
         dimensoes = dimensoes == null || dimensoes <= 0 ? DIMENSOES_PADRAO : dimensoes;
-        timeout = timeout == null || timeout.isNegative() || timeout.isZero() ? Duration.ofSeconds(20) : timeout;
+        timeout = timeout == null || timeout.isNegative() || timeout.isZero() ? Duration.ofSeconds(30) : timeout;
         maxTentativas = maxTentativas == null || maxTentativas < 1 ? 3 : maxTentativas;
         indexacao = indexacao == null ? new Indexacao(null, null, null, null) : indexacao;
         busca = busca == null ? new Busca(null, null) : busca;
         consulta = consulta == null ? new Consulta(null, null) : consulta;
         sugestao = sugestao == null ? new Sugestao(null, null, null) : sugestao;
+        String principal = modelo;
+        modelosReserva = modelosReserva == null ? List.of() : modelosReserva.stream()
+                .filter(nome -> nome != null && !nome.isBlank())
+                .map(String::trim)
+                .filter(nome -> !nome.equals(principal))
+                .distinct()
+                .toList();
+    }
+
+    /** O modelo principal seguido dos reserva, na ordem em que são tentados. */
+    public List<String> modelosDeGeracao() {
+        List<String> modelos = new ArrayList<>(modelosReserva.size() + 1);
+        modelos.add(modelo);
+        modelos.addAll(modelosReserva);
+        return List.copyOf(modelos);
     }
 
     public boolean temChave() {
@@ -83,7 +112,7 @@ public record IaProperties(
 
         public Busca {
             trechos = trechos == null || trechos < 1 ? 5 : trechos;
-            distanciaMaxima = distanciaMaxima == null || distanciaMaxima <= 0 ? 0.6 : distanciaMaxima;
+            distanciaMaxima = distanciaMaxima == null || distanciaMaxima <= 0 ? 0.45 : distanciaMaxima;
         }
     }
 

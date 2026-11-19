@@ -31,6 +31,16 @@ public interface ClienteIa {
      */
     List<float[]> gerarEmbeddings(List<String> textos, FinalidadeEmbedding finalidade);
 
+    /**
+     * {@code false} quando o provedor nem está configurado (sem chave): chamar
+     * só renderia {@link com.nexo.exception.IaIndisponivelException}. Quem
+     * trabalha em segundo plano, como a indexação, usa isto para esperar a
+     * configuração em vez de registrar falha atrás de falha.
+     */
+    default boolean disponivel() {
+        return true;
+    }
+
     /** Atalho para um texto só. */
     default float[] gerarEmbedding(String texto, FinalidadeEmbedding finalidade) {
         return gerarEmbeddings(List.of(texto), finalidade).get(0);

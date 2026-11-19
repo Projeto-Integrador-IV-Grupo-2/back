@@ -33,7 +33,8 @@ import org.springframework.stereotype.Service;
  * nada fica gravado pela metade.</p>
  *
  * <p>Sem nenhum trecho relevante, responde "não encontrei" sem chamar o
- * modelo: assim ele não tem como inventar.</p>
+ * modelo: assim ele não tem como inventar. Com trechos, só viram fonte da
+ * resposta os que o modelo declarou ter usado ({@link FontesDaResposta}).</p>
  *
  * <p>Singleton sem estado. Nenhum log carrega a pergunta ou a resposta.</p>
  */
@@ -85,15 +86,20 @@ public class ConsultaAssistenteService {
         List<TrechoEncontrado> encontrados = buscaDeTrechosService.buscar(usuario.getTenantId(), texto, trechos);
 
         String resposta;
+        List<TrechoEncontrado> usados = List.of();
         if (encontrados.isEmpty()) {
             resposta = RESPOSTA_NAO_ENCONTREI;
         } else {
             List<ChatMensagem> historico = chatSessaoService.ultimasMensagens(sessaoId, mensagensHistorico);
             PromptMontado prompt = montador.montar(texto, encontrados, historico);
-            resposta = clienteIa.gerarResposta(prompt.sistema(), prompt.mensagens()).texto();
+            // Só vira fonte o trecho que o modelo disse ter usado — não tudo o que a busca trouxe.
+            FontesDaResposta separada = FontesDaResposta.separar(
+                    clienteIa.gerarResposta(prompt.sistema(), prompt.mensagens()).texto(), encontrados);
+            resposta = separada.texto().isBlank() ? RESPOSTA_NAO_ENCONTREI : separada.texto();
+            usados = separada.texto().isBlank() ? List.of() : separada.usados();
         }
 
-        List<FonteMensagem> fontes = encontrados.stream()
+        List<FonteMensagem> fontes = usados.stream()
                 .map(trecho -> new FonteMensagem(trecho.conteudoId(), trecho.titulo(), trecho.chunkId(),
                         trecho.ordem(), trecho.texto()))
                 .toList();
