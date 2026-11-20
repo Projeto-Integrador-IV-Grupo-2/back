@@ -16,6 +16,7 @@ import com.nexo.repository.TrilhaAtribuicaoRepository;
 import com.nexo.repository.TrilhaRepository;
 import com.nexo.repository.UsuarioRepository;
 import com.nexo.security.UsuarioAutenticado;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.List;
@@ -69,7 +70,9 @@ public class AcaoDeTrilha implements CriadorDeAcao {
                 .findByTrilhaIdAndUsuarioId(trilha.getId(), colaborador.getId())
                 .orElseGet(() -> atribuir(trilha, colaborador, request, requisitante));
 
-        PdiAcao acao = PdiAcao.deTrilha(item, trilha, request.prazo(), textoOuNulo(request.descricao()));
+        // O prazo da ação é o da atribuição: ou o que já existia, ou o que a
+        // trilha define (ver prazoPadrao).
+        PdiAcao acao = PdiAcao.deTrilha(item, trilha, atribuicao.getPrazo(), textoOuNulo(request.descricao()));
         if (atribuicao.getStatus() == StatusAtribuicao.CONCLUIDA) {
             OffsetDateTime concluidoEm = atribuicao.getConcluidoEm() != null
                     ? atribuicao.getConcluidoEm()
@@ -85,10 +88,15 @@ public class AcaoDeTrilha implements CriadorDeAcao {
         // Method da atribuição pela tela de trilhas, para nenhum campo faltar.
         TrilhaAtribuicao atribuicao = trilhaAtribuicaoRepository.saveAndFlush(TrilhaAtribuicao.nova(
                 trilha, colaborador, usuarioRepository.getReferenceById(requisitante.getId()),
-                request.prazo(), StatusAtribuicao.NAO_INICIADA));
+                request.prazo() != null ? request.prazo() : prazoPadrao(trilha), StatusAtribuicao.NAO_INICIADA));
         publisher.publishEvent(new TrilhaAtribuidaEvent(
                 trilha.getId(), trilha.getTenant().getId(), List.of(colaborador.getId()), requisitante.getId()));
         return atribuicao;
+    }
+
+    /** Prazo definido na trilha (dias a partir de hoje); sem ele, sem prazo. */
+    private static LocalDate prazoPadrao(Trilha trilha) {
+        return trilha.getPrazoDias() == null ? null : LocalDate.now().plusDays(trilha.getPrazoDias());
     }
 
     private Trilha buscarTrilhaAtivaNoTenant(PdiAcaoRequest request, UsuarioAutenticado requisitante) {

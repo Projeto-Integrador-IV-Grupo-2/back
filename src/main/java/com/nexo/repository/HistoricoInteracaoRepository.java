@@ -8,10 +8,20 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface HistoricoInteracaoRepository extends JpaRepository<HistoricoInteracao, UUID> {
+
+    /**
+     * Solta o histórico de um conteúdo que vai ser excluído: os registros
+     * ficam, só sem apontar para o conteúdo.
+     */
+    @Modifying
+    @Query(value = "UPDATE historico_interacao SET conteudo_id = NULL WHERE conteudo_id = :conteudoId",
+            nativeQuery = true)
+    int desvincularConteudo(@Param("conteudoId") UUID conteudoId);
 
     @EntityGraph(attributePaths = "usuario")
     Page<HistoricoInteracao> findAllByTenantId(UUID tenantId, Pageable pageable);

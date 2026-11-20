@@ -1,5 +1,6 @@
 package com.nexo.repository;
 
+import com.nexo.entity.CatalogoConteudo;
 import com.nexo.entity.StatusConteudo;
 import com.nexo.entity.TipoConteudo;
 import java.util.UUID;
@@ -12,19 +13,21 @@ import java.util.UUID;
  * @param areaId      área do conteúdo
  * @param tipo        tipo do conteúdo
  * @param status      situação editorial; para colaborador é sempre forçada a PUBLICADO
+ * @param catalogo    TRILHA (tela de Conteúdos de trilha) ou CONHECIMENTO
  */
 public record ConteudoFiltro(
         String titulo,
         UUID categoriaId,
         UUID areaId,
         TipoConteudo tipo,
-        StatusConteudo status) {
+        StatusConteudo status,
+        CatalogoConteudo catalogo) {
 
     public static ConteudoFiltro vazio() {
-        return new ConteudoFiltro(null, null, null, null, null);
+        return new ConteudoFiltro(null, null, null, null, null, null);
     }
 
     public ConteudoFiltro comStatus(StatusConteudo novoStatus) {
-        return new ConteudoFiltro(titulo, categoriaId, areaId, tipo, novoStatus);
+        return new ConteudoFiltro(titulo, categoriaId, areaId, tipo, novoStatus, catalogo);
     }
 }

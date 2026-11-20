@@ -107,7 +107,8 @@ public class ArquivoService {
     @Transactional(readOnly = true)
     public List<ArquivoResponse> listar(UUID conteudoId, UsuarioAutenticado requisitante) {
         Conteudo conteudo = conteudoRepository.findByIdAndTenantId(conteudoId, requisitante.getTenantId())
-                .filter(encontrado -> encontrado.isPublicado() || podeVerRascunho(requisitante))
+                .filter(encontrado -> (encontrado.isPublicado() && !encontrado.isApenasAdmin())
+                        || podeVerRascunho(requisitante))
                 .orElseThrow(() -> conteudoNaoEncontrado(conteudoId));
         return arquivoRepository
                 .findByTenantIdAndConteudoIdOrderByCriadoEmAsc(requisitante.getTenantId(), conteudo.getId())
@@ -120,7 +121,9 @@ public class ArquivoService {
     @Transactional(readOnly = true)
     public ArquivoParaDownload baixar(UUID arquivoId, UsuarioAutenticado requisitante) {
         Arquivo arquivo = arquivoRepository.findByIdAndTenantId(arquivoId, requisitante.getTenantId())
-                .filter(encontrado -> encontrado.getConteudo().isPublicado() || podeVerRascunho(requisitante))
+                .filter(encontrado -> (encontrado.getConteudo().isPublicado()
+                        && !encontrado.getConteudo().isApenasAdmin())
+                        || podeVerRascunho(requisitante))
                 .orElseThrow(() -> new ResourceNotFoundException("Arquivo não encontrado: " + arquivoId));
         try {
             return new ArquivoParaDownload(arquivo.getNomeOriginal(), arquivo.getMimeType(),

@@ -8,6 +8,7 @@ import com.nexo.dto.assistente.SessaoResponse;
 import com.nexo.entity.ChatMensagem;
 import com.nexo.entity.ChatSessao;
 import com.nexo.entity.FonteMensagem;
+import com.nexo.entity.Perfil;
 import com.nexo.event.PerguntaRespondidaEvent;
 import com.nexo.ia.ClienteIa;
 import com.nexo.security.UsuarioAutenticado;
@@ -83,7 +84,11 @@ public class ConsultaAssistenteService {
         limitePerguntasService.reservar(usuario.getTenantId(), usuario.getId(), perguntasPorMinuto);
 
         String texto = pergunta.strip();
-        List<TrechoEncontrado> encontrados = buscaDeTrechosService.buscar(usuario.getTenantId(), texto, trechos);
+        // O colaborador nunca recebe trecho de conteúdo restrito à gestão.
+        boolean gestao = usuario.getPapel() == Perfil.ADMIN || usuario.getPapel() == Perfil.GESTOR;
+        List<TrechoEncontrado> encontrados = gestao
+                ? buscaDeTrechosService.buscar(usuario.getTenantId(), texto, trechos, true)
+                : buscaDeTrechosService.buscar(usuario.getTenantId(), texto, trechos);
 
         String resposta;
         List<TrechoEncontrado> usados = List.of();

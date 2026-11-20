@@ -91,6 +91,15 @@ public class Conteudo {
     @Column(name = "publicado_em")
     private OffsetDateTime publicadoEm;
 
+    /** Catálogo das trilhas ou acervo do Conhecimento: cada tela lista o seu. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "catalogo", nullable = false, length = 20)
+    private CatalogoConteudo catalogo = CatalogoConteudo.TRILHA;
+
+    /** Visível só para a gestão (ADMIN e GESTOR); o colaborador não o enxerga. */
+    @Column(name = "apenas_admin", nullable = false)
+    private boolean apenasAdmin;
+
     public Conteudo() {
     }
 
@@ -105,6 +114,7 @@ public class Conteudo {
         documento.tenant = responsavel.getTenant();
         documento.titulo = titulo;
         documento.tipo = TipoConteudo.DOCUMENTO;
+        documento.catalogo = CatalogoConteudo.CONHECIMENTO;
         documento.status = StatusConteudo.RASCUNHO;
         documento.criadoPor = responsavel;
         return documento;
@@ -112,6 +122,22 @@ public class Conteudo {
 
     public boolean isPublicado() {
         return status == StatusConteudo.PUBLICADO;
+    }
+
+    public CatalogoConteudo getCatalogo() {
+        return catalogo;
+    }
+
+    public void setCatalogo(CatalogoConteudo catalogo) {
+        this.catalogo = catalogo;
+    }
+
+    public boolean isApenasAdmin() {
+        return apenasAdmin;
+    }
+
+    public void setApenasAdmin(boolean apenasAdmin) {
+        this.apenasAdmin = apenasAdmin;
     }
 
     public UUID getId() {

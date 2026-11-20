@@ -12,8 +12,9 @@ import java.util.UUID;
  *
  * <p>{@code TRILHA} exige {@code trilhaId} (a descrição é opcional); os demais
  * tipos exigem {@code descricao} e não aceitam trilha — ver
- * {@link AcaoCoerenteComTipo}. O prazo é obrigatório porque vira o prazo da
- * atribuição da trilha ao colaborador.</p>
+ * {@link AcaoCoerenteComTipo}. Na ação {@code TRILHA} o prazo é opcional:
+ * sem ele vale o prazo da própria trilha (ver {@code AcaoDeTrilha}). Nos
+ * demais tipos ele é obrigatório.</p>
  */
 @AcaoCoerenteComTipo
 public record PdiAcaoRequest(
@@ -22,7 +23,6 @@ public record PdiAcaoRequest(
 
         UUID trilhaId,
 
-        @NotNull(message = "prazo é obrigatório")
         LocalDate prazo,
 
         @Size(max = 1000, message = "descrição deve ter no máximo 1000 caracteres")

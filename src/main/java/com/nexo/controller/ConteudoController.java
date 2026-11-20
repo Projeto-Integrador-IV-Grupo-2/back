@@ -5,6 +5,7 @@ import com.nexo.dto.conteudo.ConteudoResponse;
 import com.nexo.repository.ConteudoFiltro;
 import com.nexo.security.UsuarioAutenticado;
 import com.nexo.service.ConteudoService;
+import com.nexo.service.ExclusaoDeConteudoService;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.UUID;
@@ -14,6 +15,7 @@ import org.springframework.data.web.PagedModel;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -39,9 +41,12 @@ public class ConteudoController {
     private static final String GESTAO = "hasAnyRole('ADMIN', 'GESTOR')";
 
     private final ConteudoService conteudoService;
+    private final ExclusaoDeConteudoService exclusaoDeConteudoService;
 
-    public ConteudoController(ConteudoService conteudoService) {
+    public ConteudoController(ConteudoService conteudoService,
+                              ExclusaoDeConteudoService exclusaoDeConteudoService) {
         this.conteudoService = conteudoService;
+        this.exclusaoDeConteudoService = exclusaoDeConteudoService;
     }
 
     @PostMapping
@@ -88,5 +93,14 @@ public class ConteudoController {
     public ConteudoResponse despublicar(@PathVariable UUID id,
                                         @AuthenticationPrincipal UsuarioAutenticado usuario) {
         return conteudoService.despublicar(id, usuario);
+    }
+
+    /** Exclui de vez. Conteúdo usado em etapa de trilha responde 409. */
+    @DeleteMapping("/{id}")
+    @PreAuthorize(GESTAO)
+    public ResponseEntity<Void> excluir(@PathVariable UUID id,
+                                        @AuthenticationPrincipal UsuarioAutenticado usuario) {
+        exclusaoDeConteudoService.excluir(id, usuario);
+        return ResponseEntity.noContent().build();
     }
 }

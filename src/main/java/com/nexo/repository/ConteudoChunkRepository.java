@@ -22,7 +22,8 @@ public interface ConteudoChunkRepository extends JpaRepository<ConteudoChunk, UU
      * Trechos mais parecidos com o vetor, por distância de cosseno.
      *
      * <p>Só do tenant e só de conteúdo publicado — o filtro está na própria
-     * consulta, então nada de outra empresa ou de rascunho sai do banco.</p>
+     * consulta, então nada de outra empresa ou de rascunho sai do banco.
+     * Conteúdo restrito à gestão só entra com {@code incluirRestritos}.</p>
      *
      * @param vetor literal do pgvector, ex.: {@code [0.1,0.2,...]}
      */
@@ -38,12 +39,19 @@ public interface ConteudoChunkRepository extends JpaRepository<ConteudoChunk, UU
             where ch.tenant_id = :tenantId
               and c.tenant_id = :tenantId
               and c.status = 'PUBLICADO'
+              and (c.apenas_admin = false or :incluirRestritos)
             order by ch.embedding <=> cast(:vetor as vector)
             limit :limite
             """, nativeQuery = true)
     List<TrechoProjecao> buscarParecidos(@Param("tenantId") UUID tenantId,
                                          @Param("vetor") String vetor,
-                                         @Param("limite") int limite);
+                                         @Param("limite") int limite,
+                                         @Param("incluirRestritos") boolean incluirRestritos);
+
+    /** Sem os restritos à gestão: o padrão seguro. */
+    default List<TrechoProjecao> buscarParecidos(UUID tenantId, String vetor, int limite) {
+        return buscarParecidos(tenantId, vetor, limite, false);
+    }
 
     interface TrechoProjecao {
         UUID getChunkId();

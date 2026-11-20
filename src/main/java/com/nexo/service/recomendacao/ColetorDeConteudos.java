@@ -35,6 +35,8 @@ public class ColetorDeConteudos {
         return conteudoRepository
                 .findByTenantIdAndStatusOrderByTituloAsc(tenantId, StatusConteudo.PUBLICADO, PageRequest.of(0, MAXIMO))
                 .stream()
+                .filter(conteudo -> !conteudo.isApenasAdmin())
+                .filter(conteudo -> conteudo.getCatalogo() == com.nexo.entity.CatalogoConteudo.TRILHA)
                 .map(ConteudoCandidato::de)
                 .toList();
     }

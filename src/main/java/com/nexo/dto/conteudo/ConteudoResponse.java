@@ -1,6 +1,7 @@
 package com.nexo.dto.conteudo;
 
 import com.nexo.entity.Area;
+import com.nexo.entity.CatalogoConteudo;
 import com.nexo.entity.Categoria;
 import com.nexo.entity.Conteudo;
 import com.nexo.entity.StatusConteudo;
@@ -24,7 +25,9 @@ public record ConteudoResponse(
         String linkUrl,
         OffsetDateTime criadoEm,
         OffsetDateTime atualizadoEm,
-        OffsetDateTime publicadoEm) {
+        OffsetDateTime publicadoEm,
+        boolean apenasAdmin,
+        CatalogoConteudo catalogo) {
 
     /** Resumo de categoria ou área — nunca a entidade completa. */
     public record Recurso(UUID id, String nome) {
@@ -46,7 +49,9 @@ public record ConteudoResponse(
                 conteudo.getLinkUrl(),
                 conteudo.getCriadoEm(),
                 conteudo.getAtualizadoEm(),
-                conteudo.getPublicadoEm());
+                conteudo.getPublicadoEm(),
+                conteudo.isApenasAdmin(),
+                conteudo.getCatalogo());
     }
 
     private static Recurso recursoDe(Categoria categoria) {

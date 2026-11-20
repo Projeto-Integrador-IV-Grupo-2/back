@@ -1,7 +1,6 @@
 package com.nexo.dto.pdi;
 
 import com.nexo.entity.Pdi;
-import com.nexo.entity.StatusAcaoPdi;
 import com.nexo.entity.StatusPdi;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -28,11 +27,9 @@ public record PdiDetalheResponse(
         List<PdiItemResponse> itens) {
 
     public static PdiDetalheResponse de(Pdi pdi, List<PdiItemResponse> itens) {
-        long total = itens.stream().mapToLong(item -> item.acoes().size()).sum();
-        long concluidas = itens.stream()
-                .flatMap(item -> item.acoes().stream())
-                .filter(acao -> acao.status() == StatusAcaoPdi.CONCLUIDA)
-                .count();
+        List<PdiAcaoResponse> acoes = itens.stream().flatMap(item -> item.acoes().stream()).toList();
+        long total = acoes.size();
+        long concluidas = acoes.stream().filter(PercentualPdi::concluida).count();
         return new PdiDetalheResponse(
                 pdi.getId(),
                 PessoaResumo.de(pdi.getColaborador()),
@@ -41,7 +38,7 @@ public record PdiDetalheResponse(
                 pdi.getInicio(),
                 pdi.getFim(),
                 pdi.getStatus(),
-                PercentualPdi.de(concluidas, total),
+                PercentualPdi.de(acoes),
                 total,
                 concluidas,
                 pdi.getCriadoEm(),

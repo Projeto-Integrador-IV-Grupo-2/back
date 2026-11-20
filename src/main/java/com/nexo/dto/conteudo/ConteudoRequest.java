@@ -1,5 +1,6 @@
 package com.nexo.dto.conteudo;
 
+import com.nexo.entity.CatalogoConteudo;
 import com.nexo.entity.TipoConteudo;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -37,5 +38,24 @@ public record ConteudoRequest(
         String corpo,
 
         @Size(max = 500, message = "link deve ter no máximo 500 caracteres")
-        String linkUrl) {
+        String linkUrl,
+
+        /** Só a gestão enxerga (ex.: salários). Ausente vale {@code false}. */
+        Boolean apenasAdmin,
+
+        /**
+         * Catálogo: {@code TRILHA} (padrão) ou {@code CONHECIMENTO}. Só vale no
+         * cadastro; a edição mantém o catálogo de origem.
+         */
+        CatalogoConteudo catalogo) {
+
+    /** Compatível com quem ainda monta o corpo sem a restrição. */
+    public ConteudoRequest(String titulo, String descricao, TipoConteudo tipo, UUID categoriaId, UUID areaId,
+                           String videoUrl, String corpo, String linkUrl) {
+        this(titulo, descricao, tipo, categoriaId, areaId, videoUrl, corpo, linkUrl, null, null);
+    }
+
+    public boolean restritoAGestao() {
+        return Boolean.TRUE.equals(apenasAdmin);
+    }
 }

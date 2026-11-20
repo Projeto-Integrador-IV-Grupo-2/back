@@ -3,6 +3,7 @@ package com.nexo.service;
 import com.nexo.dto.conteudo.ConteudoRequest;
 import com.nexo.dto.conteudo.ConteudoResponse;
 import com.nexo.entity.Area;
+import com.nexo.entity.CatalogoConteudo;
 import com.nexo.entity.Conteudo;
 import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusConteudo;
@@ -78,6 +79,7 @@ public class ConteudoService {
         Conteudo conteudo = conteudoFactory.criar(request);
         conteudo.setTenant(tenantRepository.getReferenceById(requisitante.getTenantId()));
         conteudo.setCriadoPor(usuarioRepository.getReferenceById(requisitante.getId()));
+        conteudo.setCatalogo(request.catalogo() == null ? CatalogoConteudo.TRILHA : request.catalogo());
         aplicarDados(conteudo, request, requisitante.getTenantId());
         return ConteudoResponse.de(conteudoRepository.saveAndFlush(conteudo));
     }
@@ -88,8 +90,12 @@ public class ConteudoService {
         if (!podeVerRascunho(requisitante)) {
             criterios = criterios.comStatus(StatusConteudo.PUBLICADO);
         }
+        var especificacao = ConteudoSpecifications.comFiltro(criterios, requisitante.getTenantId());
+        if (!podeVerRascunho(requisitante)) {
+            especificacao = especificacao.and(ConteudoSpecifications.semRestritosAGestao());
+        }
         return conteudoRepository
-                .findAll(ConteudoSpecifications.comFiltro(criterios, requisitante.getTenantId()), pageable)
+                .findAll(especificacao, pageable)
                 .map(ConteudoResponse::de);
     }
 
@@ -101,6 +107,11 @@ public class ConteudoService {
     @Transactional
     public ConteudoResponse atualizar(UUID id, ConteudoRequest request, UsuarioAutenticado requisitante) {
         Conteudo conteudo = buscarNoTenant(id, requisitante.getTenantId());
+        if (request.restritoAGestao() && trilhaEtapaRepository.existsByConteudoId(conteudo.getId())) {
+            throw new OperacaoNaoPermitidaException(
+                    "Conteúdo usado em etapa de trilha não pode ficar visível só para a gestão: "
+                            + conteudo.getTitulo());
+        }
         conteudoFactory.aplicarMaterial(conteudo, request);
         aplicarDados(conteudo, request, requisitante.getTenantId());
         ConteudoResponse resposta = ConteudoResponse.de(conteudoRepository.saveAndFlush(conteudo));
@@ -159,6 +170,14 @@ public class ConteudoService {
             throw new OperacaoNaoPermitidaException(
                     "Publique o conteúdo antes de usá-lo numa etapa: " + conteudo.getTitulo());
         }
+        if (conteudo.isApenasAdmin()) {
+            throw new OperacaoNaoPermitidaException(
+                    "Conteúdo visível só para a gestão não pode ser usado numa trilha: " + conteudo.getTitulo());
+        }
+        if (conteudo.getCatalogo() != CatalogoConteudo.TRILHA) {
+            throw new OperacaoNaoPermitidaException(
+                    "Documento do Conhecimento não pode ser usado numa trilha: " + conteudo.getTitulo());
+        }
         return conteudo;
     }
 
@@ -169,6 +188,7 @@ public class ConteudoService {
                 ? null
                 : categoriaService.buscarAtivaNoTenant(request.categoriaId(), tenantId));
         conteudo.setArea(resolverArea(request.areaId(), tenantId));
+        conteudo.setApenasAdmin(request.restritoAGestao());
     }
 
     private Area resolverArea(UUID areaId, UUID tenantId) {
@@ -182,7 +202,8 @@ public class ConteudoService {
 
     private Conteudo buscarVisivel(UUID id, UsuarioAutenticado requisitante) {
         Conteudo conteudo = buscarNoTenant(id, requisitante.getTenantId());
-        if (!conteudo.isPublicado() && !podeVerRascunho(requisitante)) {
+        // Rascunho e conteúdo restrito à gestão não existem para o colaborador.
+        if ((!conteudo.isPublicado() || conteudo.isApenasAdmin()) && !podeVerRascunho(requisitante)) {
             throw new ResourceNotFoundException("Conteúdo não encontrado: " + id);
         }
         return conteudo;

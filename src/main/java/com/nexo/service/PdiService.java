@@ -133,17 +133,8 @@ public class PdiService {
             case COLABORADOR -> pdiRepository.findByTenantIdAndColaboradorId(tenantId, requisitante.getId(), pageable);
         };
 
-        List<UUID> ids = pdis.getContent().stream().map(Pdi::getId).toList();
-        Map<UUID, PdiAcaoRepository.TotaisPorPdi> totais = ids.isEmpty()
-                ? Map.of()
-                : pdiAcaoRepository.totaisPorPdi(ids).stream()
-                        .collect(Collectors.toMap(PdiAcaoRepository.TotaisPorPdi::getPdiId, Function.identity()));
-        return pdis.map(pdi -> {
-            PdiAcaoRepository.TotaisPorPdi total = totais.get(pdi.getId());
-            return total == null
-                    ? PdiResumoResponse.de(pdi, 0, 0)
-                    : PdiResumoResponse.de(pdi, total.getTotal(), total.getConcluidas());
-        });
+        // O percentual acompanha o progresso nas trilhas, igual ao detalhe.
+        return pdis.map(pdi -> PdiResumoResponse.de(pdi, montarDetalhe(pdi)));
     }
 
     @Transactional(readOnly = true)

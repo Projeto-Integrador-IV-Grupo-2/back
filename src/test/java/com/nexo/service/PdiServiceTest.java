@@ -19,10 +19,13 @@ import com.nexo.entity.PdiAcao;
 import com.nexo.entity.PdiItem;
 import com.nexo.entity.Perfil;
 import com.nexo.entity.StatusAcaoPdi;
+import com.nexo.entity.StatusAtribuicao;
 import com.nexo.entity.StatusPdi;
 import com.nexo.entity.Tenant;
 import com.nexo.entity.TipoAcaoPdi;
 import com.nexo.entity.TipoCompetencia;
+import com.nexo.entity.Trilha;
+import com.nexo.entity.TrilhaAtribuicao;
 import com.nexo.entity.Usuario;
 import com.nexo.exception.OperacaoNaoPermitidaException;
 import com.nexo.exception.ResourceNotFoundException;
@@ -154,7 +157,19 @@ class PdiServiceTest {
         Pdi pdi = pdi();
         when(pdiRepository.findByTenantIdAndGestorId(tenant.getId(), gestor.getId(), pagina))
                 .thenReturn(new PageImpl<>(List.of(pdi)));
-        when(pdiAcaoRepository.totaisPorPdi(anyList())).thenReturn(List.of(totais(pdi.getId(), 4, 1)));
+        // 4 ações, 1 concluída: 25%, o mesmo cálculo do detalhe.
+        PdiItem item = PdiItem.novo(pdi, competencia(true), 2, 4, null);
+        ReflectionTestUtils.setField(item, "id", UUID.randomUUID());
+        PdiAcao concluida = PdiAcao.descritiva(item, TipoAcaoPdi.MENTORIA, FIM, "Mentoria");
+        concluida.mudarStatus(StatusAcaoPdi.CONCLUIDA, OffsetDateTime.now());
+        when(pdiItemRepository.findByPdiIdOrderByCompetenciaNomeAsc(pdi.getId())).thenReturn(List.of(item));
+        when(pdiAcaoRepository.findByPdiId(pdi.getId())).thenReturn(List.of(
+                concluida,
+                PdiAcao.descritiva(item, TipoAcaoPdi.OUTRO, FIM, "Leitura 1"),
+                PdiAcao.descritiva(item, TipoAcaoPdi.OUTRO, FIM, "Leitura 2"),
+                PdiAcao.descritiva(item, TipoAcaoPdi.OUTRO, FIM, "Leitura 3")));
+        when(trilhaAtribuicaoRepository.findByTenantIdAndUsuarioId(tenant.getId(), colaborador.getId()))
+                .thenReturn(List.of());
 
         Page<PdiResumoResponse> resultado = pdiService.listar(pagina, autenticado(gestor));
 
@@ -215,6 +230,33 @@ class PdiServiceTest {
         assertThat(response.itens()).singleElement()
                 .satisfies(i -> assertThat(i.acoes()).hasSize(2));
         assertThat(response.percentual()).isEqualTo(50);
+    }
+
+    @Test
+    void percentualAcompanhaOProgressoDoColaboradorNaTrilha() {
+        Pdi pdi = pdi();
+        PdiItem item = PdiItem.novo(pdi, competencia(true), 2, 4, null);
+        ReflectionTestUtils.setField(item, "id", UUID.randomUUID());
+        Trilha trilha = new Trilha();
+        trilha.setTenant(tenant);
+        trilha.setNome("Spring Boot");
+        ReflectionTestUtils.setField(trilha, "id", UUID.randomUUID());
+        PdiAcao acao = PdiAcao.deTrilha(item, trilha, FIM, null);
+        // O colaborador está no meio da trilha: 60% das etapas feitas.
+        TrilhaAtribuicao atribuicao = TrilhaAtribuicao.nova(
+                trilha, colaborador, gestor, FIM, StatusAtribuicao.EM_ANDAMENTO);
+        atribuicao.setPercentual(60);
+        when(pdiRepository.findById(pdi.getId())).thenReturn(Optional.of(pdi));
+        when(pdiItemRepository.findByPdiIdOrderByCompetenciaNomeAsc(pdi.getId())).thenReturn(List.of(item));
+        when(pdiAcaoRepository.findByPdiId(pdi.getId())).thenReturn(List.of(acao));
+        when(trilhaAtribuicaoRepository.findByTenantIdAndUsuarioId(tenant.getId(), colaborador.getId()))
+                .thenReturn(List.of(atribuicao));
+
+        PdiDetalheResponse response = pdiService.detalhar(pdi.getId(), autenticado(colaborador));
+
+        // Antes ficava em 0% até a trilha acabar; agora sobe com o progresso.
+        assertThat(response.percentual()).isEqualTo(60);
+        assertThat(response.acoesConcluidas()).isZero();
     }
 
     @Test

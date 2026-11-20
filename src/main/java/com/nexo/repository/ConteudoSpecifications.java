@@ -15,6 +15,11 @@ public final class ConteudoSpecifications {
     private ConteudoSpecifications() {
     }
 
+    /** Tira o que só a gestão pode ver (ex.: salários). */
+    public static Specification<Conteudo> semRestritosAGestao() {
+        return (root, query, cb) -> cb.isFalse(root.get("apenasAdmin"));
+    }
+
     public static Specification<Conteudo> comFiltro(ConteudoFiltro filtro, UUID tenantId) {
         return (root, query, cb) -> {
             if (!AtribuicaoSpecifications.ehContagem(query)) {
@@ -40,6 +45,9 @@ public final class ConteudoSpecifications {
             }
             if (filtro.status() != null) {
                 predicados.add(cb.equal(root.get("status"), filtro.status()));
+            }
+            if (filtro.catalogo() != null) {
+                predicados.add(cb.equal(root.get("catalogo"), filtro.catalogo()));
             }
             return cb.and(predicados.toArray(new Predicate[0]));
         };

@@ -39,11 +39,22 @@ public class BuscaDeTrechosService {
      * @return os trechos relevantes, do mais para o menos parecido; vazio quando nada for relevante
      */
     public List<TrechoEncontrado> buscar(UUID tenantId, String texto, int limite) {
+        return buscar(tenantId, texto, limite, false);
+    }
+
+    /**
+     * @param incluirRestritos se entram os conteúdos visíveis só para a gestão
+     *                         (só quando quem pergunta é ADMIN ou GESTOR)
+     */
+    public List<TrechoEncontrado> buscar(UUID tenantId, String texto, int limite, boolean incluirRestritos) {
         if (texto == null || texto.isBlank() || limite < 1) {
             return List.of();
         }
         float[] vetor = clienteIa.gerarEmbedding(texto, FinalidadeEmbedding.CONSULTA);
-        return chunkRepository.buscarParecidos(tenantId, literal(vetor), limite).stream()
+        var trechos = incluirRestritos
+                ? chunkRepository.buscarParecidos(tenantId, literal(vetor), limite, true)
+                : chunkRepository.buscarParecidos(tenantId, literal(vetor), limite);
+        return trechos.stream()
                 .filter(trecho -> trecho.getDistancia() != null && trecho.getDistancia() <= distanciaMaxima)
                 .map(trecho -> new TrechoEncontrado(trecho.getChunkId(), trecho.getConteudoId(), trecho.getTitulo(),
                         trecho.getOrdem(), trecho.getTexto(), trecho.getDistancia()))

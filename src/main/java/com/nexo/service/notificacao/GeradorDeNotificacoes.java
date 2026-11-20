@@ -140,7 +140,8 @@ public class GeradorDeNotificacoes {
         Conteudo conteudo = conteudoRepository.findByIdAndTenantId(evento.conteudoId(), evento.tenantId())
                 .filter(Conteudo::isPublicado)
                 .orElse(null);
-        if (conteudo == null) {
+        // Restrito à gestão: os colaboradores nem sabem que existe.
+        if (conteudo == null || conteudo.isApenasAdmin()) {
             return 0;
         }
         List<Usuario> destinatarios = conteudo.getArea() == null

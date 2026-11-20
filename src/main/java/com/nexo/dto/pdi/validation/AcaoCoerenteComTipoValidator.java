@@ -24,7 +24,10 @@ public class AcaoCoerenteComTipoValidator implements ConstraintValidator<AcaoCoe
             return erro(context, "trilhaId", "só ação do tipo TRILHA aponta para uma trilha");
         }
         boolean temDescricao = acao.descricao() != null && !acao.descricao().isBlank();
-        return temDescricao || erro(context, "descricao", "descrição é obrigatória para ação do tipo " + acao.tipo());
+        if (!temDescricao) {
+            return erro(context, "descricao", "descrição é obrigatória para ação do tipo " + acao.tipo());
+        }
+        return acao.prazo() != null || erro(context, "prazo", "prazo é obrigatório");
     }
 
     private static boolean erro(ConstraintValidatorContext context, String campo, String mensagem) {
