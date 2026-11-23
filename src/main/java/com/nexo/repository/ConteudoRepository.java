@@ -33,15 +33,24 @@ public interface ConteudoRepository extends JpaRepository<Conteudo, UUID>, JpaSp
      * antes de a IA ser configurada, ou cujo evento de publicação se perdeu
      * (API reiniciada no meio). {@code ate} dá uma folga para o indexador que
      * roda logo após a publicação terminar primeiro.
+     *
+     * <p>O status vai como parâmetro: um literal de enum no JPQL vira
+     * {@code 'PUBLICADO'::StatusConteudo} no SQL, mas o tipo do PostgreSQL se
+     * chama {@code status_conteudo}.</p>
      */
+    default List<UUID> idsPublicadosSemIndexacao(OffsetDateTime ate, Pageable pagina) {
+        return idsComStatusSemIndexacao(StatusConteudo.PUBLICADO, ate, pagina);
+    }
+
     @Query("""
             select c.id from Conteudo c
-            where c.status = com.nexo.entity.StatusConteudo.PUBLICADO
+            where c.status = :status
               and c.atualizadoEm <= :ate
               and not exists (select 1 from IndexacaoConteudo i where i.conteudoId = c.id)
             order by c.atualizadoEm
             """)
-    List<UUID> idsPublicadosSemIndexacao(@Param("ate") OffsetDateTime ate, Pageable pagina);
+    List<UUID> idsComStatusSemIndexacao(@Param("status") StatusConteudo status, @Param("ate") OffsetDateTime ate,
+                                        Pageable pagina);
 
     /** Contagem de conteúdos por área para uma página inteira de áreas, numa consulta só. */
     @Query("""
