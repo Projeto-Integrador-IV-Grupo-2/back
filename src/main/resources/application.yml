@@ -110,6 +110,9 @@ app:
   ia:
     provedor: ${IA_PROVEDOR:gemini}             # gemini | fake
     api-key: ${IA_API_KEY:}
+    # Opcional: segunda chave, tentada quando a principal bate no limite de uso,
+    # é recusada ou o modelo não responde com ela.
+    api-key-reserva: ${IA_API_KEY_RESERVA:}
     url-base: ${IA_URL_BASE:https://generativelanguage.googleapis.com/v1beta}
     modelo: ${IA_MODELO:gemini-flash-latest}           # alias do Flash atual: o 2.5 saiu para contas novas
     # Tentados na ordem quando o principal está sobrecarregado, estoura o
@@ -125,7 +128,7 @@ app:
       max-tentativas: ${IA_INDEXACAO_MAX_TENTATIVAS:5}
       intervalo-nova-tentativa: ${IA_INDEXACAO_INTERVALO:PT5M}
     busca:
-      trechos: ${IA_BUSCA_TRECHOS:5}
+      trechos: ${IA_BUSCA_TRECHOS:8}
       # Medido com o gemini-embedding-001: trecho que responde a pergunta fica
       # entre 0,20 e 0,35; assunto sem relação, acima de 0,45.
       distancia-maxima: ${IA_BUSCA_DISTANCIA_MAXIMA:0.45}

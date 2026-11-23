@@ -25,6 +25,8 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
  * @param busca           quantos trechos buscar e o quão parecidos precisam ser
  * @param consulta        limites do endpoint de perguntas
  * @param sugestao        limites da sugestão de trilhas pela IA
+ * @param apiKeyReserva   segunda chave, usada quando a principal bate no limite de uso
+ *                        ou o modelo não responde com ela — nunca vai para log nem para resposta
  */
 @ConfigurationProperties(prefix = "app.ia")
 public record IaProperties(
@@ -40,7 +42,8 @@ public record IaProperties(
         Busca busca,
         Consulta consulta,
         Sugestao sugestao,
-        List<String> modelosReserva) {
+        List<String> modelosReserva,
+        String apiKeyReserva) {
 
     public static final int DIMENSOES_PADRAO = 768;
 
@@ -49,7 +52,15 @@ public record IaProperties(
                         Integer dimensoes, Duration timeout, Integer maxTentativas, Indexacao indexacao,
                         Busca busca, Consulta consulta, Sugestao sugestao) {
         this(provedor, apiKey, urlBase, modelo, modeloEmbedding, dimensoes, timeout, maxTentativas, indexacao,
-                busca, consulta, sugestao, null);
+                busca, consulta, sugestao, null, null);
+    }
+
+    /** Sem chave reserva — a forma usada pelos testes que não tratam disso. */
+    public IaProperties(String provedor, String apiKey, String urlBase, String modelo, String modeloEmbedding,
+                        Integer dimensoes, Duration timeout, Integer maxTentativas, Indexacao indexacao,
+                        Busca busca, Consulta consulta, Sugestao sugestao, List<String> modelosReserva) {
+        this(provedor, apiKey, urlBase, modelo, modeloEmbedding, dimensoes, timeout, maxTentativas, indexacao,
+                busca, consulta, sugestao, modelosReserva, null);
     }
 
     @ConstructorBinding
@@ -87,6 +98,21 @@ public record IaProperties(
     }
 
     /**
+     * A chave principal seguida da reserva (quando configurada e diferente),
+     * na ordem em que são tentadas.
+     */
+    public List<String> chaves() {
+        List<String> chaves = new ArrayList<>(2);
+        if (temChave()) {
+            chaves.add(apiKey.strip());
+        }
+        if (apiKeyReserva != null && !apiKeyReserva.isBlank() && !chaves.contains(apiKeyReserva.strip())) {
+            chaves.add(apiKeyReserva.strip());
+        }
+        return List.copyOf(chaves);
+    }
+
+    /**
      * @param tamanhoTrecho          máximo de caracteres por trecho
      * @param sobreposicao           caracteres repetidos entre um trecho e o seguinte
      * @param maxTentativas          tentativas de indexar um documento antes de desistir
@@ -111,7 +137,7 @@ public record IaProperties(
     public record Busca(Integer trechos, Double distanciaMaxima) {
 
         public Busca {
-            trechos = trechos == null || trechos < 1 ? 5 : trechos;
+            trechos = trechos == null || trechos < 1 ? 8 : trechos;
             distanciaMaxima = distanciaMaxima == null || distanciaMaxima <= 0 ? 0.45 : distanciaMaxima;
         }
     }

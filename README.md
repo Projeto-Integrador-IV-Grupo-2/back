@@ -257,6 +257,21 @@ token ou as credenciais não conferem, **403** para usuário inativo ou sem
 permissão. Um tenant desativado também invalida tokens já emitidos na próxima
 requisição autenticada.
 
+### Empresas (tenants)
+
+Só o **ADMIN da empresa dona da plataforma** (tenant `nexo`) cadastra empresas;
+o ADMIN de qualquer outra empresa recebe **403**. A empresa nasce com o
+primeiro administrador, que entra com o próprio e-mail e monta o resto
+(áreas, usuários, documentos, trilhas) já isolado das demais empresas.
+
+| Endpoint | Acesso | O que faz |
+|---|---|---|
+| `GET /api/admin/empresas` | ADMIN da plataforma | Empresas com total de usuários e o selo `plataforma` |
+| `POST /api/admin/empresas` | ADMIN da plataforma | `{ nome, subdominio, cnpj?, nomeAdministrador, emailAdministrador, senhaAdministrador }` → **201**. Subdomínio repetido ou inválido: **400** com `fieldErrors` |
+
+O `GET /api/auth/me` (e o login) devolvem `plataforma: true` para quem é da
+empresa dona da plataforma: o front só mostra o menu **Empresas** a esse ADMIN.
+
 ---
 
 ## Áreas (departamentos)
@@ -582,6 +597,11 @@ cartão de crédito, com uma única chave para chat e embeddings e boa qualidade
 em português. O Claude, da Anthropic, foi descartado por não oferecer
 embeddings: exigiria um segundo provedor, como a Voyage AI.
 
+**Chave reserva:** com `IA_API_KEY_RESERVA`, cada modelo é tentado com a
+chave principal e depois com a reserva. 429, timeout ou chave recusada
+(401/403) passam a vez para a outra chave na hora; a combinação que falhou
+fica 15 minutos no fim da fila.
+
 Sem `IA_API_KEY` a API sobe normalmente, e só as rotas de IA respondem **503**
 com mensagem clara. Timeout, limite de uso (429) e erro 5xx do provedor ganham
 até `IA_MAX_TENTATIVAS` tentativas, com espera crescente. A chave vai só no
@@ -635,9 +655,15 @@ tipo MIME: PDF (PDFBox), DOCX (Apache POI), TXT e MD (UTF-8). A
 `ArquivosDoConteudo` lê cada arquivo do armazenamento e pede o extrator à
 factory. Um formato novo é só mais um `ExtratorDeTexto` (`@Component`).
 
-**Busca:** o `BuscaDeTrechosService` compara o embedding da pergunta com os
-trechos usando a distância de cosseno do pgvector (`<=>`). Trechos mais
-distantes que `IA_BUSCA_DISTANCIA_MAXIMA` são descartados.
+**Busca híbrida:** o `BuscaDeTrechosService` compara o embedding da pergunta
+com os trechos pela distância de cosseno do pgvector (`<=>`), descartando os
+mais distantes que `IA_BUSCA_DISTANCIA_MAXIMA`, e roda em paralelo uma busca
+textual do PostgreSQL (`to_tsvector('portuguese', ...)`, palavras da pergunta
+unidas por OU). As duas listas são fundidas por posição (Reciprocal Rank
+Fusion) e os `IA_BUSCA_TRECHOS` (padrão **8**) primeiros vão para o prompt.
+A busca textual resolve perguntas sobre um dado pontual ("quantos
+funcionários", "onde fica a sede") quando vários trechos falam da mesma
+empresa e o vetor deixa o trecho exato de fora.
 
 **Testes:** `DivisorDeTextoTest` (tamanho, sobreposição e ordem),
 `BuscaDeTrechosServiceTest` (busca com o `ClienteIaFake`),
@@ -980,6 +1006,7 @@ define-se a variável e ela prevalece.
 | `VIMEO_TIMEOUT` | `PT5S` | Tempo máximo de espera pela resposta do Vimeo |
 | `IA_PROVEDOR` | `gemini` | Implementação do `ClienteIa`: `gemini` ou `fake` (testes) |
 | `IA_API_KEY` | *(vazio)* | Chave da API do Gemini ([Google AI Studio](https://aistudio.google.com/apikey)). Sem ela, as rotas de IA respondem 503 |
+| `IA_API_KEY_RESERVA` | *(vazio)* | Segunda chave do Gemini, usada quando a principal bate no limite, é recusada ou estoura o timeout |
 | `IA_MODELO` | `gemini-flash-latest` | Modelo de chat. É um alias que o Google mantém no Flash atual: o `gemini-2.5-flash` responde 404 para contas criadas depois da aposentadoria dele |
 | `IA_MODELO_EMBEDDING` | `gemini-embedding-001` | Modelo de embeddings (sempre com 768 dimensões) |
 | `IA_MODELOS_RESERVA` | `gemini-flash-lite-latest` | Modelos de chat tentados, na ordem, quando o principal responde 429/5xx, estoura o timeout ou foi aposentado (404). Separados por vírgula; vazio desliga. Na camada gratuita o Flash costuma ficar sobrecarregado, e o Flash-Lite responde em poucos segundos |
@@ -989,7 +1016,7 @@ define-se a variável e ela prevalece.
 | `IA_SOBREPOSICAO_TRECHO` | `200` | Caracteres repetidos entre trechos vizinhos |
 | `IA_INDEXACAO_MAX_TENTATIVAS` | `5` | Tentativas de indexar um documento antes de desistir |
 | `IA_INDEXACAO_INTERVALO` | `PT5M` | Espera base entre uma falha de indexação e a próxima tentativa |
-| `IA_BUSCA_TRECHOS` | `5` | Quantos trechos entram no prompt |
+| `IA_BUSCA_TRECHOS` | `8` | Quantos trechos entram no prompt |
 | `IA_BUSCA_DISTANCIA_MAXIMA` | `0.45` | Distância de cosseno máxima para um trecho contar como relevante. Com o `gemini-embedding-001`, trecho que responde a pergunta fica entre 0,20 e 0,35 e assunto sem relação passa de 0,45 |
 | `IA_PERGUNTAS_POR_MINUTO` | `10` | Perguntas ao assistente aceitas por usuário a cada minuto |
 | `IA_MENSAGENS_HISTORICO` | `6` | Mensagens anteriores da sessão que entram no prompt |

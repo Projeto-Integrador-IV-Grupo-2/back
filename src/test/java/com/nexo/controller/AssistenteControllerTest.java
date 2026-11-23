@@ -373,10 +373,20 @@ class AssistenteControllerTest {
 
         mockMvc.perform(comToken(delete("/api/assistente/sessoes/{id}", sessaoId), tokenColaborador))
                 .andExpect(status().isNoContent());
+        // Sem o flush o DELETE só iria ao banco no commit (que o teste nunca faz)
+        // e a chave estrangeira do histórico passaria despercebida.
+        jdbcTemplateDoTeste.execute("SET CONSTRAINTS ALL IMMEDIATE");
+        entityManagerDoTeste.flush();
 
         assertThat(chatSessaoRepository.findById(sessaoId)).isEmpty();
         assertThat(chatMensagemRepository.findBySessaoIdOrderByCriadoEm(sessaoId)).isEmpty();
     }
+
+    @Autowired
+    private jakarta.persistence.EntityManager entityManagerDoTeste;
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplateDoTeste;
 
     @Test
     void conversaDeOutroUsuarioResponde404EmTodasAsRotas() throws Exception {

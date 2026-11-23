@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -37,9 +37,15 @@ import org.springframework.web.client.RestClientException;
  * modelo sobrecarregado (429/5xx) passa a vez para o próximo na mesma rodada;
  * um que estourou o timeout ou foi aposentado pelo provedor (404) sai da
  * conversa até o fim da chamada, para o usuário não esperar o mesmo timeout
- * de novo. Quem falhou fica cinco minutos no fim da fila, para as próximas
+ * de novo. Quem falhou fica quinze minutos no fim da fila, para as próximas
  * perguntas não pagarem a mesma espera. Os embeddings usam um modelo só: trocar de modelo mudaria o espaço
  * vetorial dos trechos já indexados.</p>
+ *
+ * <p><strong>Chave reserva:</strong> com {@code app.ia.api-key-reserva}, cada
+ * modelo é tentado primeiro com a chave principal e depois com a reserva. Uma
+ * chave que bate no limite de uso (429), estoura o timeout ou é recusada
+ * (401/403) cede a vez à outra na mesma rodada, sem espera. Os embeddings usam
+ * o mesmo modelo com qualquer das chaves, então o espaço vetorial não muda.</p>
  *
  * <p>A chave vai só no header {@code x-goog-api-key}. Os logs registram o
  * status HTTP, nunca o prompt, a resposta ou a chave.</p>
@@ -55,7 +61,7 @@ public class GeminiClienteIa implements ClienteIa {
     private static final double TEMPERATURA = 0.2;
 
     /** Por quanto tempo um modelo que falhou (429, 5xx ou timeout) cede a vez aos outros. */
-    static final Duration PAUSA_DO_MODELO = Duration.ofMinutes(5);
+    static final Duration PAUSA_DO_MODELO = Duration.ofMinutes(15);
 
     private final RestClient restClient;
     private final IaProperties properties;
@@ -88,9 +94,9 @@ public class GeminiClienteIa implements ClienteIa {
                 "contents", mensagens.stream().map(GeminiClienteIa::conteudo).toList(),
                 "generationConfig", Map.of("temperature", TEMPERATURA));
 
-        RespostaGeracao resposta = comNovasTentativas(properties.modelosDeGeracao(), modelo -> restClient.post()
+        RespostaGeracao resposta = comNovasTentativas(properties.modelosDeGeracao(), (modelo, chave) -> restClient.post()
                 .uri(properties.urlBase() + "/models/{modelo}:generateContent", modelo)
-                .header(HEADER_CHAVE, properties.apiKey())
+                .header(HEADER_CHAVE, chave)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(corpo)
                 .retrieve()
@@ -128,9 +134,9 @@ public class GeminiClienteIa implements ClienteIa {
                         "outputDimensionality", properties.dimensoes()))
                 .toList();
 
-        RespostaEmbeddings resposta = comNovasTentativas(List.of(properties.modeloEmbedding()), nome -> restClient.post()
+        RespostaEmbeddings resposta = comNovasTentativas(List.of(properties.modeloEmbedding()), (nome, chave) -> restClient.post()
                 .uri(properties.urlBase() + "/models/{modelo}:batchEmbedContents", nome)
-                .header(HEADER_CHAVE, properties.apiKey())
+                .header(HEADER_CHAVE, chave)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("requests", pedidos))
                 .retrieve()
@@ -154,39 +160,74 @@ public class GeminiClienteIa implements ClienteIa {
     }
 
     /**
-     * Chama o provedor percorrendo {@code modelos} em rodadas, até
-     * {@code app.ia.max-tentativas} rodadas, com espera crescente entre elas.
+     * Uma combinação de modelo e chave. {@code indiceChave} só serve para log e
+     * para a pausa: a chave em si nunca vai para log.
      */
-    private <T> T comNovasTentativas(List<String> modelos, Function<String, T> chamada) {
+    private record Rota(String modelo, int indiceChave, String chave) {
+
+        String id() {
+            return modelo + "#" + indiceChave;
+        }
+
+        String descricao() {
+            return indiceChave == 0 ? "'" + modelo + "'" : "'" + modelo + "' (chave reserva)";
+        }
+    }
+
+    /** Cada modelo com a chave principal e depois com a reserva, na ordem. */
+    private List<Rota> rotas(List<String> modelos) {
+        List<String> chaves = properties.chaves();
+        List<Rota> rotas = new ArrayList<>(modelos.size() * chaves.size());
+        for (String modelo : modelos) {
+            for (int i = 0; i < chaves.size(); i++) {
+                rotas.add(new Rota(modelo, i, chaves.get(i)));
+            }
+        }
+        return rotas;
+    }
+
+    /**
+     * Chama o provedor percorrendo as combinações de {@code modelos} e chaves em
+     * rodadas, até {@code app.ia.max-tentativas} rodadas, com espera crescente
+     * entre elas.
+     */
+    private <T> T comNovasTentativas(List<String> modelos, BiFunction<String, String, T> chamada) {
         int maxTentativas = properties.maxTentativas();
-        // Modelos que não adianta tentar de novo nesta chamada (aposentado ou timeout).
+        List<Rota> rotas = rotas(modelos);
+        // Rotas que não adianta tentar de novo nesta chamada (aposentado, timeout ou chave recusada).
         Set<String> fora = new HashSet<>();
         boolean algumAposentado = false;
         boolean limiteDeUso = false;
         RuntimeException ultima = null;
-        for (int tentativa = 1; tentativa <= maxTentativas && fora.size() < modelos.size(); tentativa++) {
+        for (int tentativa = 1; tentativa <= maxTentativas && fora.size() < rotas.size(); tentativa++) {
             if (tentativa > 1) {
                 esperar(tentativa - 1);
             }
-            for (String modelo : saudaveisPrimeiro(modelos)) {
-                if (fora.contains(modelo)) {
+            for (Rota rota : saudaveisPrimeiro(rotas)) {
+                if (fora.contains(rota.id())) {
                     continue;
                 }
                 try {
-                    return chamada.apply(modelo);
+                    return chamada.apply(rota.modelo(), rota.chave());
                 } catch (HttpClientErrorException ex) {
                     int status = ex.getStatusCode().value();
                     ultima = ex;
                     if (status == 404) {
                         // O provedor aposenta modelos: o próximo da lista assume.
-                        log.warn("Modelo de IA '{}' não existe mais no provedor (HTTP 404)", modelo);
-                        fora.add(modelo);
+                        log.warn("Modelo de IA {} não existe mais no provedor (HTTP 404)", rota.descricao());
+                        fora.add(rota.id());
                         algumAposentado = true;
                     } else if (status == 429) {
                         limiteDeUso = true;
-                        pausar(modelo);
-                        log.info("Provedor de IA respondeu 429 para '{}'; tentativa {} de {}",
-                                modelo, tentativa, maxTentativas);
+                        pausar(rota);
+                        log.info("Provedor de IA respondeu 429 para {}; tentativa {} de {}",
+                                rota.descricao(), tentativa, maxTentativas);
+                    } else if ((status == 401 || status == 403) && properties.chaves().size() > 1) {
+                        // Chave recusada: a outra chave ainda pode responder.
+                        log.warn("Provedor de IA recusou a chave de {} com HTTP {}", rota.descricao(), status);
+                        rotas.stream()
+                                .filter(outra -> outra.indiceChave() == rota.indiceChave())
+                                .forEach(outra -> fora.add(outra.id()));
                     } else {
                         log.warn("Provedor de IA recusou a chamada com HTTP {}", status);
                         throw new IaIndisponivelException(
@@ -201,13 +242,13 @@ public class GeminiClienteIa implements ClienteIa {
                     }
                     ultima = ex;
                     limiteDeUso = false;
-                    pausar(modelo);
-                    log.info("Falha temporária do provedor de IA em '{}' ({}); tentativa {} de {}",
-                            modelo, falhaDeRede ? "rede/timeout" : ex.getClass().getSimpleName(),
+                    pausar(rota);
+                    log.info("Falha temporária do provedor de IA em {} ({}); tentativa {} de {}",
+                            rota.descricao(), falhaDeRede ? "rede/timeout" : ex.getClass().getSimpleName(),
                             tentativa, maxTentativas);
-                    if (falhaDeRede && modelos.size() > 1) {
+                    if (falhaDeRede && rotas.size() > 1) {
                         // Já custou um timeout inteiro: com reserva disponível, não espera outro.
-                        fora.add(modelo);
+                        fora.add(rota.id());
                     }
                 }
             }
@@ -217,6 +258,11 @@ public class GeminiClienteIa implements ClienteIa {
             throw new IaIndisponivelException(
                     "O provedor de IA recusou a chamada. Verifique a configuração do assistente "
                             + "(o modelo configurado não existe mais).", ultima);
+        }
+        if (ultima instanceof HttpClientErrorException erro
+                && (erro.getStatusCode().value() == 401 || erro.getStatusCode().value() == 403)) {
+            throw new IaIndisponivelException(
+                    "O provedor de IA recusou a chamada. Verifique a configuração do assistente.", ultima);
         }
         if (limiteDeUso) {
             throw new IaIndisponivelException(
@@ -241,9 +287,9 @@ public class GeminiClienteIa implements ClienteIa {
         return false;
     }
 
-    /** Deixa o modelo no fim da fila por {@link #PAUSA_DO_MODELO}. */
-    private void pausar(String modelo) {
-        emPausaAte.put(modelo, System.nanoTime() + PAUSA_DO_MODELO.toNanos());
+    /** Deixa a combinação de modelo e chave no fim da fila por {@link #PAUSA_DO_MODELO}. */
+    private void pausar(Rota rota) {
+        emPausaAte.put(rota.id(), System.nanoTime() + PAUSA_DO_MODELO.toNanos());
     }
 
     /**
@@ -252,19 +298,19 @@ public class GeminiClienteIa implements ClienteIa {
      * responder 503, então as próximas perguntas vão direto para quem está
      * respondendo. Ninguém sai da lista — em pausa, só é tentado por último.
      */
-    private List<String> saudaveisPrimeiro(List<String> modelos) {
-        if (modelos.size() < 2 || emPausaAte.isEmpty()) {
-            return modelos;
+    private List<Rota> saudaveisPrimeiro(List<Rota> rotas) {
+        if (rotas.size() < 2 || emPausaAte.isEmpty()) {
+            return rotas;
         }
         long agora = System.nanoTime();
-        List<String> ordenados = new ArrayList<>(modelos.size());
-        List<String> pausados = new ArrayList<>();
-        for (String modelo : modelos) {
-            Long ate = emPausaAte.get(modelo);
+        List<Rota> ordenados = new ArrayList<>(rotas.size());
+        List<Rota> pausados = new ArrayList<>();
+        for (Rota rota : rotas) {
+            Long ate = emPausaAte.get(rota.id());
             if (ate != null && ate - agora > 0) {
-                pausados.add(modelo);
+                pausados.add(rota);
             } else {
-                ordenados.add(modelo);
+                ordenados.add(rota);
             }
         }
         ordenados.addAll(pausados);

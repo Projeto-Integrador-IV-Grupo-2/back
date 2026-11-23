@@ -17,6 +17,8 @@ import java.util.UUID;
  * @param papel        perfil de acesso
  * @param area         área do usuário, ou {@code null} se ele não tiver uma
  * @param empresa      nome da empresa (tenant), para a tela de perfil
+ * @param plataforma   {@code true} quando o usuário é da empresa dona da plataforma:
+ *                     o front mostra o cadastro de empresas só para o ADMIN dela
  */
 public record MeResponse(
         UUID id,
@@ -25,7 +27,8 @@ public record MeResponse(
         String email,
         Perfil papel,
         Recurso area,
-        Recurso empresa) {
+        Recurso empresa,
+        boolean plataforma) {
 
     /** Monta a partir da entidade: área e tenant são lidos, então chame dentro de uma transação. */
     public static MeResponse de(Usuario usuario) {
@@ -37,7 +40,8 @@ public record MeResponse(
                 usuario.getEmail(),
                 usuario.getPapel(),
                 recursoDe(usuario.getArea()),
-                new Recurso(tenant.getId(), tenant.getNome()));
+                new Recurso(tenant.getId(), tenant.getNome()),
+                tenant.isPlataforma());
     }
 
     private static Recurso recursoDe(Area area) {

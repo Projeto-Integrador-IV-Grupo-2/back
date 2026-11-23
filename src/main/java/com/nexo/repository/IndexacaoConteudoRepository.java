@@ -21,13 +21,22 @@ public interface IndexacaoConteudoRepository extends JpaRepository<IndexacaoCont
      * desde antes de {@code limite} — ganham uma nova chance de tempos em
      * tempos, para uma queda longa do provedor não tirar o documento da busca
      * para sempre.
+     *
+     * <p>O status vai como parâmetro: um literal de enum no JPQL vira
+     * {@code 'FALHOU'::StatusIndexacao} no SQL, e o tipo do PostgreSQL se chama
+     * {@code status_indexacao} — a consulta quebrava a cada execução da rotina.</p>
      */
+    default List<UUID> idsDeFalhasAbandonadasDesde(OffsetDateTime limite, Pageable pagina) {
+        return idsComStatusSemProximaTentativaDesde(StatusIndexacao.FALHOU, limite, pagina);
+    }
+
     @Query("""
             select i.conteudoId from IndexacaoConteudo i
-            where i.status = com.nexo.entity.StatusIndexacao.FALHOU
+            where i.status = :status
               and i.proximaTentativaEm is null
               and i.atualizadoEm <= :limite
             order by i.atualizadoEm
             """)
-    List<UUID> idsDeFalhasAbandonadasDesde(@Param("limite") OffsetDateTime limite, Pageable pagina);
+    List<UUID> idsComStatusSemProximaTentativaDesde(@Param("status") StatusIndexacao status,
+                                                    @Param("limite") OffsetDateTime limite, Pageable pagina);
 }
