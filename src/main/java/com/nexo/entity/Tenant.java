@@ -14,6 +14,9 @@ import org.hibernate.annotations.CreationTimestamp;
 @Table(name = "tenant")
 public class Tenant {
 
+    /** Subdomínio da empresa dona da plataforma: os administradores dela cadastram as outras empresas. */
+    public static final String SUBDOMINIO_PLATAFORMA = "nexo";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -75,6 +78,11 @@ public class Tenant {
 
     public OffsetDateTime getCriadoEm() {
         return criadoEm;
+    }
+
+    /** {@code true} para a empresa dona da plataforma (Nexo). */
+    public boolean isPlataforma() {
+        return SUBDOMINIO_PLATAFORMA.equalsIgnoreCase(subdominio);
     }
 
     @Override

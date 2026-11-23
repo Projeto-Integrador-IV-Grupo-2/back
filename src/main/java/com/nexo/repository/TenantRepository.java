@@ -12,4 +12,8 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
     Optional<Tenant> findBySubdominioIgnoreCase(String subdominio);
 
     boolean existsBySubdominio(String subdominio);
+
+    boolean existsBySubdominioIgnoreCase(String subdominio);
+
+    java.util.List<Tenant> findAllByOrderByCriadoEmAsc();
 }

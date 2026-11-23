@@ -38,6 +38,8 @@ public interface UsuarioRepository
 
     long countByAreaId(UUID areaId);
 
+    long countByTenantId(UUID tenantId);
+
     /** Destinatários de uma atribuição de trilha por área: só os ativos. */
     List<Usuario> findByTenantIdAndAreaIdAndAtivoTrue(UUID tenantId, UUID areaId);
 
