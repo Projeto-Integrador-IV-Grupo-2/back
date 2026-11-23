@@ -51,14 +51,70 @@ public class BuscaDeTrechosService {
             return List.of();
         }
         float[] vetor = clienteIa.gerarEmbedding(texto, FinalidadeEmbedding.CONSULTA);
-        var trechos = incluirRestritos
-                ? chunkRepository.buscarParecidos(tenantId, literal(vetor), limite, true)
-                : chunkRepository.buscarParecidos(tenantId, literal(vetor), limite);
-        return trechos.stream()
+        String literal = literal(vetor);
+        var porVetor = (incluirRestritos
+                ? chunkRepository.buscarParecidos(tenantId, literal, limite, true)
+                : chunkRepository.buscarParecidos(tenantId, literal, limite))
+                .stream()
                 .filter(trecho -> trecho.getDistancia() != null && trecho.getDistancia() <= distanciaMaxima)
-                .map(trecho -> new TrechoEncontrado(trecho.getChunkId(), trecho.getConteudoId(), trecho.getTitulo(),
-                        trecho.getOrdem(), trecho.getTexto(), trecho.getDistancia()))
                 .toList();
+
+        String consulta = consultaTextual(texto);
+        List<ConteudoChunkRepository.TrechoProjecao> porPalavras = consulta.isEmpty()
+                ? List.of()
+                : chunkRepository.buscarPorPalavras(tenantId, consulta, literal, limite, incluirRestritos);
+        if (porPalavras == null) {
+            porPalavras = List.of();
+        }
+
+        return combinar(porVetor, porPalavras, limite).stream()
+                .map(trecho -> new TrechoEncontrado(trecho.getChunkId(), trecho.getConteudoId(), trecho.getTitulo(),
+                        trecho.getOrdem(), trecho.getTexto(),
+                        trecho.getDistancia() == null ? 1.0 : trecho.getDistancia()))
+                .toList();
+    }
+
+    /** Constante da fusão por posição (Reciprocal Rank Fusion); 60 é o valor usual. */
+    private static final int K_FUSAO = 60;
+
+    /**
+     * Junta as duas listas pela posição de cada trecho nelas (RRF): quem
+     * aparece bem nas duas sobe; sem resultado textual, a ordem do vetor fica igual.
+     */
+    static List<ConteudoChunkRepository.TrechoProjecao> combinar(
+            List<ConteudoChunkRepository.TrechoProjecao> porVetor,
+            List<ConteudoChunkRepository.TrechoProjecao> porPalavras, int limite) {
+        java.util.Map<UUID, Double> pontos = new java.util.LinkedHashMap<>();
+        java.util.Map<UUID, ConteudoChunkRepository.TrechoProjecao> porId = new java.util.HashMap<>();
+        for (int i = 0; i < porVetor.size(); i++) {
+            var trecho = porVetor.get(i);
+            porId.putIfAbsent(trecho.getChunkId(), trecho);
+            pontos.merge(trecho.getChunkId(), 1.0 / (K_FUSAO + i + 1), Double::sum);
+        }
+        for (int i = 0; i < porPalavras.size(); i++) {
+            var trecho = porPalavras.get(i);
+            porId.putIfAbsent(trecho.getChunkId(), trecho);
+            pontos.merge(trecho.getChunkId(), 1.0 / (K_FUSAO + i + 1), Double::sum);
+        }
+        return pontos.entrySet().stream()
+                .sorted(java.util.Map.Entry.<UUID, Double>comparingByValue().reversed())
+                .limit(limite)
+                .map(entrada -> porId.get(entrada.getKey()))
+                .toList();
+    }
+
+    /**
+     * Palavras da pergunta (3+ letras) unidas por OU, no formato do
+     * {@code to_tsquery}. Só letras e números entram, então nada da pergunta
+     * vira operador da consulta. Palavras vazias ("como", "para") o próprio
+     * dicionário {@code portuguese} descarta.
+     */
+    static String consultaTextual(String texto) {
+        return java.util.Arrays.stream(texto.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{N}]+"))
+                .filter(palavra -> palavra.length() >= 3)
+                .distinct()
+                .limit(20)
+                .collect(java.util.stream.Collectors.joining(" | "));
     }
 
     /** Formato de texto do pgvector: {@code [0.1,0.2,...]}. */

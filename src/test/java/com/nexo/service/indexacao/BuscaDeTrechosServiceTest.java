@@ -165,4 +165,40 @@ class BuscaDeTrechosServiceTest {
             }
         };
     }
+
+    @Test
+    void trechoAchadoSoPelasPalavrasEntraJuntoComOsDoVetor() {
+        UUID conteudoId = UUID.randomUUID();
+        TrechoProjecao doVetor = trecho(conteudoId, "Servidor", 1, "Backup diário.", 0.3);
+        TrechoProjecao dasPalavras = trecho(conteudoId, "Requisitos", 1, "187 funcionários, sede em Campinas.", 0.7);
+        when(chunkRepository.buscarParecidos(eq(tenantId), anyString(), eq(5))).thenReturn(List.of(doVetor));
+        when(chunkRepository.buscarPorPalavras(eq(tenantId), anyString(), anyString(), eq(5), eq(false)))
+                .thenReturn(List.of(dasPalavras));
+
+        List<TrechoEncontrado> encontrados = service.buscar(tenantId, "Quantos funcionários a empresa tem?", 5);
+
+        assertThat(encontrados).extracting(TrechoEncontrado::titulo).containsExactlyInAnyOrder("Servidor", "Requisitos");
+    }
+
+    @Test
+    void trechoNasDuasBuscasSobeParaOTopo() {
+        UUID conteudoId = UUID.randomUUID();
+        TrechoProjecao primeiroNoVetor = trecho(conteudoId, "A", 1, "a", 0.2);
+        TrechoProjecao segundoNoVetor = trecho(conteudoId, "B", 2, "b", 0.25);
+        when(chunkRepository.buscarParecidos(eq(tenantId), anyString(), eq(5)))
+                .thenReturn(List.of(primeiroNoVetor, segundoNoVetor));
+        when(chunkRepository.buscarPorPalavras(eq(tenantId), anyString(), anyString(), eq(5), eq(false)))
+                .thenReturn(List.of(segundoNoVetor));
+
+        assertThat(service.buscar(tenantId, "palavra chave", 5)).extracting(TrechoEncontrado::titulo)
+                .containsExactly("B", "A");
+    }
+
+    @Test
+    void consultaTextualSoTemPalavrasUnidasPorOu() {
+        assertThat(BuscaDeTrechosService.consultaTextual("Quantos funcionários? a sede & (x) | ')"))
+                .isEqualTo("quantos | funcionários | sede");
+        assertThat(BuscaDeTrechosService.consultaTextual("a é ?")).isEmpty();
+    }
+
 }

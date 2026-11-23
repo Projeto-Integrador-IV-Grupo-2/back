@@ -53,6 +53,40 @@ public interface ConteudoChunkRepository extends JpaRepository<ConteudoChunk, UU
         return buscarParecidos(tenantId, vetor, limite, false);
     }
 
+    /**
+     * Trechos que contêm palavras da pergunta (busca textual do PostgreSQL,
+     * dicionário {@code portuguese}, com radicais: "funcionários" casa com
+     * "funcionário"). Complementa a busca por vetor, que às vezes deixa de fora
+     * o trecho exato quando vários trechos falam da mesma empresa.
+     *
+     * <p>Mesmos filtros de tenant, publicado e restrito da busca por vetor. A
+     * distância de cosseno também volta, só para informação.</p>
+     *
+     * @param consulta termos no formato do {@code to_tsquery}, ex.: {@code funcionarios | sede}
+     */
+    @Query(value = """
+            select ch.id as chunkId,
+                   ch.conteudo_id as conteudoId,
+                   c.titulo as titulo,
+                   ch.ordem as ordem,
+                   ch.texto as texto,
+                   ch.embedding <=> cast(:vetor as vector) as distancia
+            from conteudo_chunk ch
+            join conteudo c on c.id = ch.conteudo_id
+            where ch.tenant_id = :tenantId
+              and c.tenant_id = :tenantId
+              and c.status = 'PUBLICADO'
+              and (c.apenas_admin = false or :incluirRestritos)
+              and to_tsvector('portuguese', ch.texto) @@ to_tsquery('portuguese', :consulta)
+            order by ts_rank_cd(to_tsvector('portuguese', ch.texto), to_tsquery('portuguese', :consulta)) desc
+            limit :limite
+            """, nativeQuery = true)
+    List<TrechoProjecao> buscarPorPalavras(@Param("tenantId") UUID tenantId,
+                                           @Param("consulta") String consulta,
+                                           @Param("vetor") String vetor,
+                                           @Param("limite") int limite,
+                                           @Param("incluirRestritos") boolean incluirRestritos);
+
     interface TrechoProjecao {
         UUID getChunkId();
 

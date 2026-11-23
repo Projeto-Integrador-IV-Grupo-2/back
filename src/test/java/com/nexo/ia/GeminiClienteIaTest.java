@@ -48,6 +48,59 @@ class GeminiClienteIaTest {
         return new GeminiClienteIa(builder.build(), properties, Duration.ZERO);
     }
 
+    private GeminiClienteIa clienteComChaveReserva(int maxTentativas) {
+        RestClient.Builder builder = RestClient.builder();
+        servidor = MockRestServiceServer.bindTo(builder).build();
+        IaProperties properties = new IaProperties("gemini", "chave-principal", BASE, "gemini-teste",
+                "embedding-teste", 3, Duration.ofSeconds(1), maxTentativas, null, null, null, null, List.of(),
+                "chave-reserva");
+        return new GeminiClienteIa(builder.build(), properties, Duration.ZERO);
+    }
+
+    @Test
+    void limiteDeUsoNaChavePrincipalPassaParaAReservaSemEspera() {
+        GeminiClienteIa cliente = clienteComChaveReserva(1);
+        servidor.expect(requestTo(GERAR))
+                .andExpect(header("x-goog-api-key", "chave-principal"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        servidor.expect(requestTo(GERAR))
+                .andExpect(header("x-goog-api-key", "chave-reserva"))
+                .andRespond(withSuccess(RESPOSTA_OK, MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.gerarResposta("s", List.of(MensagemIa.doUsuario("p"))).texto())
+                .isEqualTo("Olá! Tudo certo.");
+        servidor.verify();
+    }
+
+    @Test
+    void chavePrincipalRecusadaUsaAReserva() {
+        GeminiClienteIa cliente = clienteComChaveReserva(3);
+        servidor.expect(requestTo(GERAR))
+                .andExpect(header("x-goog-api-key", "chave-principal"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN));
+        servidor.expect(requestTo(GERAR))
+                .andExpect(header("x-goog-api-key", "chave-reserva"))
+                .andRespond(withSuccess(RESPOSTA_OK, MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.gerarResposta("s", List.of(MensagemIa.doUsuario("p"))).texto()).isNotBlank();
+        servidor.verify();
+    }
+
+    @Test
+    void timeoutNaChavePrincipalUsaAReservaNosEmbeddings() {
+        GeminiClienteIa cliente = clienteComChaveReserva(1);
+        servidor.expect(requestTo(EMBEDDINGS))
+                .andExpect(header("x-goog-api-key", "chave-principal"))
+                .andRespond(withException(new SocketTimeoutException("lento")));
+        servidor.expect(requestTo(EMBEDDINGS))
+                .andExpect(header("x-goog-api-key", "chave-reserva"))
+                .andRespond(withSuccess("{\"embeddings\":[{\"values\":[0.1,0.2,0.3]}]}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThat(cliente.gerarEmbeddings(List.of("texto"), FinalidadeEmbedding.DOCUMENTO)).hasSize(1);
+        servidor.verify();
+    }
+
     private GeminiClienteIa cliente(String chave, int maxTentativas) {
         RestClient.Builder builder = RestClient.builder();
         servidor = MockRestServiceServer.bindTo(builder).build();
